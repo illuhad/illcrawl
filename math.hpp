@@ -19,6 +19,16 @@
 namespace illcrawl {
 namespace math {
 
+std::size_t make_multiple_of(std::size_t n, std::size_t value)
+{
+  std::size_t result = (value / n) * n;
+  if(result != value)
+    result += n;
+
+  return result;
+}
+
+
 using scalar = double;
 
 template<std::size_t Dim>
@@ -45,6 +55,23 @@ scalar dot(const vector_n<Dim>& a, const vector_n<Dim>& b)
   return result;
 }
 
+template<std::size_t Dim>
+vector_n<Dim> normalize(const vector_n<Dim>& v)
+{
+  vector_n<Dim> result;
+  scalar length_inv = 1. / std::sqrt(dot(v,v));
+  for(std::size_t i = 0; i < Dim; ++i)
+    result[i] = length_inv * v[i];
+  return result;
+}
+
+inline static
+vector3 cross(const vector3& a, const vector3& b)
+{
+  return {{a[1] * b[2] - a[2] * b[1],
+           a[2] * b[0] - a[0] * b[2],
+           a[0] * b[1] - a[1] * b[0]}};
+}
 
 inline scalar square(scalar x)
 {

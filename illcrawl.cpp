@@ -7,18 +7,19 @@
 #include "particle_distribution.hpp"
 #include "qcl.hpp"
 #include "reconstruction.hpp"
+#include "volumetric_reconstruction.hpp"
 
 void usage()
 {
   std::cout << "Usage: illcrawl <Path to HDF5 file>" << std::endl;
 }
 
-using result_scalar = illcrawl::grid_quantity_reconstruction::result_scalar;
+using result_scalar = illcrawl::smoothed_quantity_reconstruction2D::result_scalar;
 using render_result = illcrawl::util::multi_array<result_scalar>;
 
 void render_view3d(const illcrawl::math::vector3& center,
                    const illcrawl::io::illustris_gas_data_loader& loader,
-                   illcrawl::grid_quantity_reconstruction& reconstruction)
+                   illcrawl::smoothed_quantity_reconstruction2D& reconstruction)
 {
 
   std::size_t resolution = 2048;
@@ -50,7 +51,7 @@ void render_view3d(const illcrawl::math::vector3& center,
         illcrawl::reconstruction_quantity::xray_emission>(&loader);
 
     reconstruction.set_coordinate_transformation(coordinate_transformation);
-    reconstruction.reconstruct_quantity2D(
+    reconstruction.run(
         *xray_emission,
         loader.get_coordinates(), loader.get_smoothing_length(), loader.get_volume(),
         center, 2000, 2000, resolution,
@@ -70,12 +71,12 @@ void render_view3d(const illcrawl::math::vector3& center,
 
 void render_quantity(const illcrawl::math::vector3& center,
                    const illcrawl::io::illustris_gas_data_loader& loader,
-                   illcrawl::grid_quantity_reconstruction& reconstruction,
+                   illcrawl::smoothed_quantity_reconstruction2D& reconstruction,
                    const illcrawl::reconstruction_quantity::quantity& rendered_quantity,
                    illcrawl::util::multi_array<result_scalar>& result)
 {
 
-  reconstruction.reconstruct_quantity2D(
+  reconstruction.run(
       rendered_quantity,
       loader.get_coordinates(), loader.get_smoothing_length(), loader.get_volume(),
       center, 2000, 2000, 2048,
@@ -84,7 +85,7 @@ void render_quantity(const illcrawl::math::vector3& center,
 
 void render_quantity(const illcrawl::math::vector3& center,
                    const illcrawl::io::illustris_gas_data_loader& loader,
-                   illcrawl::grid_quantity_reconstruction& reconstruction,
+                   illcrawl::smoothed_quantity_reconstruction2D& reconstruction,
                    const illcrawl::reconstruction_quantity::quantity& rendered_quantity,
                    const std::string& filename = "illcrawl_render.fits")
 {
@@ -98,7 +99,7 @@ void render_quantity(const illcrawl::math::vector3& center,
 void render_luminosity_weighted_temperature(
                    const illcrawl::math::vector3& center,
                    const illcrawl::io::illustris_gas_data_loader& loader,
-                   illcrawl::grid_quantity_reconstruction& reconstruction,
+                   illcrawl::smoothed_quantity_reconstruction2D& reconstruction,
                    const illcrawl::util::multi_array<result_scalar>& xray_emission,
                    const std::string& filename = "illcrawl_render.fits")
 {
@@ -170,7 +171,9 @@ int main(int argc, char** argv)
   }
 
   global_ctx->global_register_source_file("reconstruction.cl",
-                                          {"image_tile_based_reconstruction2D"});
+                                          {"image_tile_based_reconstruction2D",
+                                           "volumetric_reconstruction",
+                                           "finalize_volumetric_reconstruction"});
 
   global_ctx->global_register_source_file("quantities.cl",
                                           // Kernels inside quantities.cl
@@ -200,8 +203,6 @@ int main(int argc, char** argv)
   std::cout << "Distribution size: " << distribution_size[0] << "x"
             << distribution_size[1] << "x" << distribution_size[2] << std::endl;
 
-  illcrawl::grid_quantity_reconstruction reconstruction{
-      ctx};
 
   auto luminosity_weighted_temperature = std::make_shared<
       illcrawl::reconstruction_quantity::luminosity_weighted_temperature>(&loader);
@@ -216,10 +217,13 @@ int main(int argc, char** argv)
       std::make_shared<illcrawl::reconstruction_quantity::mean_temperature>(&loader);
 
   illcrawl::math::vector3 center = {{0.0, distribution_center[1], distribution_center[2]}};
+
+  //illcrawl::smoothed_quantity_reconstruction2D reconstruction{ctx};
+
   //render_view3d(center,
   //              loader, reconstruction);
 
-
+  /*
   render_result xray_emission_result;
   render_quantity(center,
                   loader,
@@ -239,6 +243,29 @@ int main(int argc, char** argv)
                   reconstruction,
                   *xray_emission,
                   "illcrawl_render_emission.fits");
+  */
+
+  illcrawl::math::vector3 periodic_wraparound {{75000.0, 75000.0, 75000.0}};
+  illcrawl::math::vector3 volume_size = {{2000.0, 2000.0, 2000.0}};
+  illcrawl::math::vector3 camera_look_at = {{0., 0., 1.}};
+  illcrawl::volume_cutout total_render_volume{center, volume_size, periodic_wraparound};
+
+  illcrawl::volumetric_reconstruction reconstruction{
+        ctx,
+        total_render_volume,
+        loader.get_coordinates(),
+        loader.get_smoothing_length()
+  };
+
+  illcrawl::volumetric_slice slice{
+    illcrawl::camera{center, camera_look_at, 0.0, 1000.0, 4096, 4096}
+  };
+
+  render_result result;
+  slice.create_slice(reconstruction, *mean_temperature, result);
+
+  illcrawl::util::fits<result_scalar> result_file{"illcrawl_render.fits"};
+  result_file.save(result);
 
   return 0;
 }

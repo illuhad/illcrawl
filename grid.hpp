@@ -1,4 +1,7 @@
 
+#ifndef GRID_HPP
+#define GRID_HPP
+
 #include "math.hpp"
 
 namespace illcrawl {
@@ -25,9 +28,10 @@ public:
   grid_coordinate_translator(const math::vector_n<Dim>& center,
                              const math::vector_n<Dim>& extent,
                              const grid_index& num_cells)
-    :_center{center}, _extent{extent}, _num_cells{{static_cast<std::size_t>(num_cells[0]),
-                                                   static_cast<std::size_t>(num_cells[1])}}
+    :_center{center}, _extent{extent}
   {
+    for(std::size_t i = 0; i < Dim; ++i)
+      _num_cells[i] = static_cast<std::size_t>(num_cells[i]);
     init();
   }
 
@@ -39,6 +43,14 @@ public:
       result[i] = static_cast<long long int>((pos[i] - _min_corner[i]) / _cell_size[i]);
 
     return result;
+  }
+
+  inline bool is_within_bounds(const grid_index& idx) const
+  {
+    for(std::size_t i = 0; i < Dim; ++i)
+      if(idx[i] < 0 || idx[i] >= _num_cells[i])
+        return false;
+    return true;
   }
 
   static
@@ -120,3 +132,5 @@ private:
 
 }
 }
+
+#endif

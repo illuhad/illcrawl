@@ -150,7 +150,7 @@ __kernel void image_tile_based_reconstruction2D(__global vector4* tiles,
 
 typedef float8 nearest_neighbors_list;
 
-__constant uint8 insertion_shuffle_masks [] =
+__constant uint16 insertion_shuffle_masks [] =
 {
   (uint16)(0, 1, 2, 3, 4, 5, 6, 7, (uint8)(8)),
   (uint16)(8, 1, 2, 3, 4, 5, 6, 7, (uint8)(8)),
@@ -178,11 +178,24 @@ void sorted_neighbors_insert(nearest_neighbors_list* weights,
 {
   // Find position to insert before
   int insertion_pos = 0;
-  for(; insertion_pos < 8; ++insertion_pos)
-  {
-    if(weights[insertion_pos] > new_weight)
-      break;
-  }
+
+  if(weights->s1 >= new_weight && new_weight > weights->s0)
+    insertion_pos = 1;
+  if(weights->s2 >= new_weight && new_weight > weights->s1)
+    insertion_pos = 2;
+  if(weights->s3 >= new_weight && new_weight > weights->s2)
+    insertion_pos = 3;
+  if(weights->s4 >= new_weight && new_weight > weights->s3)
+    insertion_pos = 4;
+  if(weights->s5 >= new_weight && new_weight > weights->s4)
+    insertion_pos = 5;
+  if(weights->s6 >= new_weight && new_weight > weights->s5)
+    insertion_pos = 6;
+  if(weights->s7 >= new_weight && new_weight > weights->s6)
+    insertion_pos = 7;
+  if(new_weight > weights->s7)
+    insertion_pos = 8;
+
 
   neighbor_list_insert(weights, new_weight, insertion_pos);
   neighbor_list_insert(values, new_value, insertion_pos);
@@ -215,107 +228,193 @@ scalar get_distance_from_weight3d(scalar weight)
   return 1.f / sqrt(weight);
 }
 
+__kernel void volumetric_reconstruction(
+    int is_first_run,
+    __global vector4* tiles,
+    int3 num_tiles,
+    vector3 tiles_min_corner,
+    vector3 tile_sizes,
 
-__kernel void reconstruction3D_weight_estimation(__global vector4* tiles,
-                                                int3 num_tiles,
-                                                __global vector4* particles,
-                                                scalar maximum_smoothing_length,
-                                                __global vector4* evaluation_points_coordinates,
-                                                __global nearest_neighbors_list* evaluation_points_weights,
-                                                __global nearest_neighbors_list* evaluation_points_values,
-                                                vector3 tiles_min_corner,
-                                                vector3 tile_sizes,
-                                                __global scalar* quantity)
+    __global vector4* particles,
+    scalar maximum_smoothing_length,
+
+    int num_evaluation_points,
+    __global vector4* evaluation_points_coordinates,
+    __global nearest_neighbors_list* evaluation_points_weights,
+    __global nearest_neighbors_list* evaluation_points_values,
+
+    __global scalar* quantity)
 {
   int gid = get_global_id(0);
 
-  vector3 evaluation_point_coord = evaluation_points_coordinates[gid].xyz;
-  nearest_neighbors_list weights = evaluation_points_weights[gid];
-  nearest_neighbors_list values = evaluation_points_values[gid];
-  scalar maximum_weight = nearest_neighbor_list_max(weights);
-
-  int3 evaluation_tile = get_tile_around_pos3(evaluation_point_coord, tiles_min_corner, tile_sizes);
-
-  vector3 tile_center = tiles_min_corner + (evaluation_tile + 0.5f) * tile_sizes;
-  scalar tile_radius = 0.5f * sqrt(dot(tile_sizes, tile_sizes));
-
-  scalar search_radius = maximum_smoothing_length;
-  if(is_nearest_neighbor_list_nonzero(weights))
-    search_radius = get_distance_from_weight(nearest_neighbor_list_min(weights));
-
-  int3 min_tile = get_tile_around_pos3(tile_center - (search_radius + tile_radius),
-                                      tiles_min_corner,
-                                      tile_size);
-  min_tile.x = max(0, min_tile.x);
-  min_tile.y = max(0, min_tile.y);
-  min_tile.z = max(0, min_tile.z);
-
-  int3 max_tile = get_tile_around_pos3(tile_center + (search_radius + tile_radius),
-                                      tiles_min_corner,
-                                      tile_size);
-
-  max_tile.x = min((int)(num_tiles.x-1), max_tile.x);
-  max_tile.y = min((int)(num_tiles.y-1), max_tile.y);
-  max_tile.z = min((int)(num_tiles.z-1), max_tile.z);
-
-  int3 current_tile;
-  for(current_tile.z = min_tile.z;
-      current_tile.z <= max_tile.z;
-      ++current_tile.z)
+  if (gid < num_evaluation_points)
   {
-    for(current_tile.y = min_tile.y;
-        current_tile.y <= max_tile.y;
-        ++current_tile.y)
+    vector3 evaluation_point_coord = evaluation_points_coordinates[gid].xyz;
+    nearest_neighbors_list weights;
+    nearest_neighbors_list values;
+    if (is_first_run)
     {
-      for(current_tile.x = min_tile.x;
-          current_tile.x <= max_tile.x;
-          ++current_tile.x)
+      weights = (nearest_neighbors_list)(0, 0, 0, 0, 0, 0, 0, 0);
+      values  = (nearest_neighbors_list)(0, 0, 0, 0, 0, 0, 0, 0);
+    }
+    else
+    {
+      weights = evaluation_points_weights[gid];
+      values =  evaluation_points_values[gid];
+    }
+
+    scalar maximum_weight = nearest_neighbor_list_max(weights);
+
+    int3 evaluation_tile = get_tile_around_pos3(evaluation_point_coord,
+                                                tiles_min_corner, tile_sizes);
+    vector3 evaluation_tile_float = (vector3)((float)evaluation_tile.x,
+                                              (float)evaluation_tile.y,
+                                              (float)evaluation_tile.z);
+
+    vector3 tile_center =
+        tiles_min_corner + (evaluation_tile_float + 0.5f) * tile_sizes;
+    scalar tile_radius = 0.5f * sqrt(dot(tile_sizes, tile_sizes));
+
+    scalar search_radius = maximum_smoothing_length;
+    if (is_nearest_neighbor_list_nonzero(weights))
+      search_radius =
+          get_distance_from_weight3d(nearest_neighbor_list_min(weights));
+
+    int3 min_tile =
+        get_tile_around_pos3(tile_center - (search_radius + tile_radius),
+                             tiles_min_corner, tile_sizes);
+    min_tile.x = max(0, min_tile.x);
+    min_tile.y = max(0, min_tile.y);
+    min_tile.z = max(0, min_tile.z);
+
+    int3 max_tile =
+        get_tile_around_pos3(tile_center + (search_radius + tile_radius),
+                             tiles_min_corner, tile_sizes);
+
+    max_tile.x = min((int)(num_tiles.x - 1), max_tile.x);
+    max_tile.y = min((int)(num_tiles.y - 1), max_tile.y);
+    max_tile.z = min((int)(num_tiles.z - 1), max_tile.z);
+
+    int3 current_tile;
+    for (current_tile.z = min_tile.z; current_tile.z <= max_tile.z;
+         ++current_tile.z)
+    {
+      for (current_tile.y = min_tile.y; current_tile.y <= max_tile.y;
+           ++current_tile.y)
       {
-        vector3 current_tile_center = tiles_min_corner + (current_tile + 0.5f) * tile_sizes;
-        scalar r = tile_radius + search_radius;
-
-        if(distance23d(current_tile_center, evaluation_point_coord) < r*r)
+        for (current_tile.x = min_tile.x; current_tile.x <= max_tile.x;
+             ++current_tile.x)
         {
+          vector3 current_tile_float = (vector3)((float)current_tile.x,
+                                                 (float)current_tile.y,
+                                                 (float)current_tile.z);
 
-          vector4 tile_header = tiles[current_tile.z * num_tiles.x * num_tiles.y
-                                    + current_tile.y * num_tiles.x
-                                    + current_tile.x];
+          vector3 current_tile_center =
+              tiles_min_corner + (current_tile_float + (vector3)0.5f) * tile_sizes;
+          scalar r = tile_radius + search_radius;
 
-          int num_particles_in_tile = (int)tile_header.x;
-          //scalar maximum_smoothing_distance_of_tile = tile_header.y;
-          int particle_data_offset = (int)tile_header.z;
 
-          scalar current_min_weight = nearest_neighbor_list_min(weights);
 
-          for(int i = 0; i < num_particles_in_tile; ++i)
+          if (distance23d(current_tile_center, evaluation_point_coord) < r * r)
           {
-            vector4 current_particle = particles[particle_data_offset + i];
 
-            scalar new_weight = get_weight3d(current_particle.xyz, evaluation_point_coord);
-            if(new_weight > current_min_weight)
+            vector4 tile_header =
+                tiles[current_tile.z * num_tiles.x * num_tiles.y +
+                      current_tile.y * num_tiles.x +
+                      current_tile.x];
+
+            int num_particles_in_tile = (int)tile_header.x;
+            // scalar maximum_smoothing_distance_of_tile = tile_header.y;
+            int particle_data_offset = (int)tile_header.z;
+
+            scalar current_min_weight = nearest_neighbor_list_min(weights);
+
+            for (int i = 0; i < num_particles_in_tile; ++i)
             {
-              scalar new_value = quantity[(int)current_particle.w];
+              vector4 current_particle = particles[particle_data_offset + i];
 
-              sorted_neighbors_insert(&weights, &values, new_weight, new_value);
+              scalar new_weight =
+                  get_weight3d(current_particle.xyz, evaluation_point_coord);
+              if (new_weight > current_min_weight)
+              {
+                scalar new_value = quantity[(int)current_particle.w];
 
-              current_min_weight = nearest_neighbors_list_min(weights);
+                sorted_neighbors_insert(&weights, &values, new_weight,
+                                        new_value);
 
-              // If we already have all slots for weights taken, we can
-              // assume as search radius the distance to the particle with
-              // the lowest contribution (i.e. the farthest particle)
-              if(is_nearest_neighbor_list_nonzero(weights))
-                search_radius = get_distance_from_weight(nearest_neighbor_list_min(weights));
+                current_min_weight = nearest_neighbor_list_min(weights);
+
+                // If we already have all slots for weights taken, we can
+                // assume as search radius the distance to the particle with
+                // the lowest contribution (i.e. the farthest particle)
+                if (is_nearest_neighbor_list_nonzero(weights))
+                  search_radius = get_distance_from_weight3d(
+                      nearest_neighbor_list_min(weights));
+              }
             }
           }
-
         }
       }
     }
-  }
 
-  evaluation_points_weights[gid] = weights;
-  evaluation_points_values[gid] = values;
+    evaluation_points_weights[gid] = weights;
+    evaluation_points_values[gid] = values;
+  }
 }
+
+__kernel void finalize_volumetric_reconstruction(int num_evaluation_points,
+                                                 __global nearest_neighbors_list* evaluation_points_weights,
+                                                 __global nearest_neighbors_list* evaluation_points_values,
+                                                 __global scalar* output)
+{
+  int gid = get_global_id(0);
+
+  if(gid < num_evaluation_points)
+  {
+
+    nearest_neighbors_list weights = evaluation_points_weights[gid];
+    nearest_neighbors_list values  = evaluation_points_values [gid];
+
+    scalar weight_sum = 0.0f;
+    weight_sum += weights.s0;
+    weight_sum += weights.s1;
+    weight_sum += weights.s2;
+    weight_sum += weights.s3;
+    weight_sum += weights.s4;
+    weight_sum += weights.s5;
+    weight_sum += weights.s6;
+    weight_sum += weights.s7;
+    if(weight_sum == 0.0f)
+      weight_sum = 1.0f;
+
+    scalar dot_product = 0.0f;
+    dot_product += weights.s0 * values.s0;
+    dot_product += weights.s1 * values.s1;
+    dot_product += weights.s2 * values.s2;
+    dot_product += weights.s3 * values.s3;
+    dot_product += weights.s4 * values.s4;
+    dot_product += weights.s5 * values.s5;
+    dot_product += weights.s6 * values.s6;
+    dot_product += weights.s7 * values.s7;
+
+    output[gid] = dot_product / weight_sum;
+  }
+}
+/*
+__kernel void volumetric_integration(__global int* num_evaluation_points,
+                                     __global scalar* values,
+                                     __global scalar* dz,
+                                     __global scalar* pixels_out,
+                                     scalar dA,
+                                     int num_pixels_x,
+                                     int num_pixels_y)
+{
+  int gid_x = get_global_id(0);
+  int gid_y = get_global_id(1);
+
+  scalar result = 0.0f;
+}
+
 
 __kernel void reconstruction3D(__global nearest_neighbors_list* evaluation_points_weights,
                                __global nearest_neighbors_list* evaluation_points_values,
@@ -365,7 +464,7 @@ __kernel void reconstruction3D(__global nearest_neighbors_list* evaluation_point
   }
 
 }
-
+*/
 
 
 #endif

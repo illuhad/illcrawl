@@ -11,6 +11,7 @@
 #include "grid.hpp"
 #include "math.hpp"
 #include "quantity.hpp"
+#include "coordinate_system.hpp"
 
 #include "qcl_module.hpp"
 #include "qcl.hpp"
@@ -19,7 +20,7 @@ namespace illcrawl {
 
 
 //template<class Input_data_type>
-class grid_quantity_reconstruction
+class smoothed_quantity_reconstruction2D
 {
 public:
   using result_scalar = float;
@@ -31,9 +32,9 @@ public:
 
   using coordinate_transformator = std::function<math::vector3(const math::vector3)>;
 
-  grid_quantity_reconstruction(const qcl::device_context_ptr& ctx,
-                               const std::string& reconstruction_kernel2d_name
-                                  ="image_tile_based_reconstruction2D")
+  smoothed_quantity_reconstruction2D(const qcl::device_context_ptr& ctx,
+                                     const std::string& reconstruction_kernel2d_name
+                                     ="image_tile_based_reconstruction2D")
     : _ctx{ctx},
       _reconstruction_kernel{ctx->get_kernel(reconstruction_kernel2d_name)},
       _coordinate_transformation{[](const math::vector3& v){return v;}}
@@ -44,7 +45,7 @@ public:
     _coordinate_transformation = transformator;
   }
 
-  void reconstruct_quantity2D(const reconstruction_quantity::quantity& quantity_to_reconstruct,
+  void run(const reconstruction_quantity::quantity& quantity_to_reconstruct,
                               const H5::DataSet& coordinates,
                               const H5::DataSet& smoothing_lengths,
                               const H5::DataSet& volumes,
@@ -55,7 +56,7 @@ public:
                               const math::vector3& periodic_wraparound_size,
                               util::multi_array<result_scalar>& out)
   {
-    this->reconstruct_quantity2D(quantity_to_reconstruct.get_required_datasets(),
+    this->run(quantity_to_reconstruct.get_required_datasets(),
                                  quantity_to_reconstruct.get_quantitiy_scaling_factors(),
                                  coordinates,
                                  smoothing_lengths,
@@ -69,19 +70,14 @@ public:
                                  out);
   }
 
-  void reconstruct_quantity2D(
-                     const std::vector<H5::DataSet>& reconstruction_quantities,
-                     const std::vector<math::scalar> quantities_scaling,
-                     const H5::DataSet& coordinates,
-                     const H5::DataSet& smoothing_lengths,
-                     const H5::DataSet& volumes,
-                     const math::vector3& center,
-                     math::scalar x_size,
-                     math::scalar y_size,
-                     std::size_t num_pix_x,
-                     const math::vector3& periodic_wraparound_size,
-                     const qcl::kernel_ptr& quantity_transformation_kernel,
-                     util::multi_array<result_scalar>& out)
+  void run(const std::vector<H5::DataSet>& reconstruction_quantities,
+           const std::vector<math::scalar> quantities_scaling,
+           const H5::DataSet& coordinates, const H5::DataSet& smoothing_lengths,
+           const H5::DataSet& volumes, const math::vector3& center,
+           math::scalar x_size, math::scalar y_size, std::size_t num_pix_x,
+           const math::vector3& periodic_wraparound_size,
+           const qcl::kernel_ptr& quantity_transformation_kernel,
+           util::multi_array<result_scalar>& out)
   {
     assert(reconstruction_quantities.size() != 0);
     assert(quantities_scaling.size() == reconstruction_quantities.size());
@@ -101,10 +97,10 @@ public:
     }
 
     long long num_tiles_x =
-        make_multiple_of(_local_group_size, pixel_grid_translator.get_num_cells()[0])
+        math::make_multiple_of(_local_group_size, pixel_grid_translator.get_num_cells()[0])
         / _local_group_size;
     long long num_tiles_y =
-        make_multiple_of(_local_group_size, pixel_grid_translator.get_num_cells()[1])
+        math::make_multiple_of(_local_group_size, pixel_grid_translator.get_num_cells()[1])
         / _local_group_size;
 
     util::grid_coordinate_translator<2> tiles_grid_translator{{{center[0], center[1]}},
@@ -196,10 +192,10 @@ public:
           max_smoothing_length = smoothing_length;
 
         // Correct for periodicity of the simulation volume
-        correct_periodicity(pixel_grid_translator,
-                            periodic_wraparound_size,
-                            smoothing_length,
-                            particle_position);
+        coordinate_system::correct_periodicity(pixel_grid_translator,
+                                               periodic_wraparound_size,
+                                               smoothing_length,
+                                               particle_position);
 
         for(std::size_t j = 0; j < reconstruction_quantities.size(); ++j)
         {
@@ -315,7 +311,7 @@ public:
       cl_int err = _ctx->get_command_queue().enqueueNDRangeKernel(
                        *quantity_transformation_kernel,
                        cl::NullRange,
-                       cl::NDRange{make_multiple_of(_local_group_size,
+                       cl::NDRange{math::make_multiple_of(_local_group_size,
                                    current_block.get_num_available_rows())},
                        cl::NDRange{_local_group_size},
                        nullptr,
@@ -376,44 +372,12 @@ public:
 private:
 
 
-  void correct_periodicity(const util::grid_coordinate_translator<2>& grid_translator,
-                           const math::vector3& periodic_wraparound_size,
-                           math::scalar smoothing_length,
-                           math::vector3& coordinates) const
-  {
-    auto grid_min_coordinates = grid_translator.get_grid_min_corner();
-    auto grid_max_coordinates = grid_translator.get_grid_max_corner();
-    for (std::size_t j = 0; j < 2; ++j)
-    {
-      math::scalar grid_min = grid_min_coordinates[j] - smoothing_length;
-      math::scalar grid_max = grid_max_coordinates[j] + smoothing_length;
-
-      if (math::geometry::is_within_range(coordinates[j] - periodic_wraparound_size[j],
-                                        grid_min,
-                                        grid_max))
-        coordinates[j] -= periodic_wraparound_size[j];
-      else if (math::geometry::is_within_range(coordinates[j] + periodic_wraparound_size[j],
-                                             grid_min,
-                                             grid_max))
-        coordinates[j] += periodic_wraparound_size[j];
-    }
-  }
-
-
-  std::size_t make_multiple_of(std::size_t n, std::size_t value) const
-  {
-    std::size_t result = (value / n) * n;
-    if(result != value)
-      result += n;
-
-    return result;
-  }
 
 
   cl::NDRange get_num_work_items(std::size_t num_pix_x, std::size_t num_pix_y) const
   {
-    return cl::NDRange{make_multiple_of(_local_group_size, num_pix_x),
-                       make_multiple_of(_local_group_size, num_pix_y)};
+    return cl::NDRange{math::make_multiple_of(_local_group_size, num_pix_x),
+                       math::make_multiple_of(_local_group_size, num_pix_y)};
   }
 
   const std::size_t _local_group_size = 16;

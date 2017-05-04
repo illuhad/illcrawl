@@ -309,7 +309,7 @@ public:
   /// \return A kernel object
   /// \param kernel_name The name of the kernel. Throws \c std::runtime_error if
   /// the kernel is not found.
-  kernel_ptr get_kernel(const std::string kernel_name)
+  kernel_ptr get_kernel(const std::string& kernel_name)
   {
     kernel_ptr kernel = _kernels[kernel_name];
     
