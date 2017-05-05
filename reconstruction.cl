@@ -213,19 +213,19 @@ scalar nearest_neighbor_list_min(nearest_neighbors_list x)
 
 int is_nearest_neighbor_list_nonzero(nearest_neighbors_list x)
 {
-  // Due to the sorting, it is enough to check x.s7
-  return x.s7 != 0.0f;
+  // Due to the sorting, it is enough to check x.s0
+  return x.s0 != 0.0f;
 }
 
 
 scalar get_weight3d(vector3 a, vector3 b)
 {
-  return 1.f / distance23d(a,b);
+  return 1.f / distance(a,b);
 }
 
 scalar get_distance_from_weight3d(scalar weight)
 {
-  return 1.f / sqrt(weight);
+  return 1.f / weight;
 }
 
 __kernel void volumetric_reconstruction(
@@ -273,9 +273,19 @@ __kernel void volumetric_reconstruction(
 
     vector3 tile_center =
         tiles_min_corner + (evaluation_tile_float + 0.5f) * tile_sizes;
+
     scalar tile_radius = 0.5f * sqrt(dot(tile_sizes, tile_sizes));
 
-    scalar search_radius = maximum_smoothing_length;
+    vector4 evaluation_tile_header =
+        tiles[evaluation_tile.z * num_tiles.x * num_tiles.y +
+              evaluation_tile.y * num_tiles.x +
+              evaluation_tile.x];
+
+    // search radius is maximum smoothing length within tile by default
+    scalar search_radius = evaluation_tile_header.w;
+    if(search_radius == 0.0f)
+      search_radius = maximum_smoothing_length;
+
     if (is_nearest_neighbor_list_nonzero(weights))
       search_radius =
           get_distance_from_weight3d(nearest_neighbor_list_min(weights));
@@ -295,6 +305,7 @@ __kernel void volumetric_reconstruction(
     max_tile.y = min((int)(num_tiles.y - 1), max_tile.y);
     max_tile.z = min((int)(num_tiles.z - 1), max_tile.z);
 
+
     int3 current_tile;
     for (current_tile.z = min_tile.z; current_tile.z <= max_tile.z;
          ++current_tile.z)
@@ -305,19 +316,19 @@ __kernel void volumetric_reconstruction(
         for (current_tile.x = min_tile.x; current_tile.x <= max_tile.x;
              ++current_tile.x)
         {
+          //if(gid==0)
+          //  printf("%f %f\n",search_radius,tile_radius);
           vector3 current_tile_float = (vector3)((float)current_tile.x,
                                                  (float)current_tile.y,
                                                  (float)current_tile.z);
 
           vector3 current_tile_center =
               tiles_min_corner + (current_tile_float + (vector3)0.5f) * tile_sizes;
+
           scalar r = tile_radius + search_radius;
-
-
 
           if (distance23d(current_tile_center, evaluation_point_coord) < r * r)
           {
-
             vector4 tile_header =
                 tiles[current_tile.z * num_tiles.x * num_tiles.y +
                       current_tile.y * num_tiles.x +
@@ -327,22 +338,19 @@ __kernel void volumetric_reconstruction(
             // scalar maximum_smoothing_distance_of_tile = tile_header.y;
             int particle_data_offset = (int)tile_header.z;
 
-            scalar current_min_weight = nearest_neighbor_list_min(weights);
-
             for (int i = 0; i < num_particles_in_tile; ++i)
             {
               vector4 current_particle = particles[particle_data_offset + i];
 
               scalar new_weight =
                   get_weight3d(current_particle.xyz, evaluation_point_coord);
-              if (new_weight > current_min_weight)
+
+              if (new_weight > nearest_neighbor_list_min(weights))
               {
                 scalar new_value = quantity[(int)current_particle.w];
 
                 sorted_neighbors_insert(&weights, &values, new_weight,
                                         new_value);
-
-                current_min_weight = nearest_neighbor_list_min(weights);
 
                 // If we already have all slots for weights taken, we can
                 // assume as search radius the distance to the particle with

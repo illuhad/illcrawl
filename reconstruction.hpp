@@ -229,14 +229,6 @@ public:
       }
 
 
-      /*
-      for(std::size_t y = 0; y < num_tiles_y; ++y)
-      {
-        for(std::size_t x = 0; x < num_tiles_x; ++x)
-          std::cout << num_particles_in_tile[static_cast<std::size_t>(y * num_tiles_x + x)] << " ";
-        std::cout << std::endl;
-      }
-*/
 
       // Sort into tiles - start by storing the number of particles per tile
       for(std::size_t i = 0; i < num_tiles_x*num_tiles_y; ++i)
@@ -370,9 +362,6 @@ public:
 
 
 private:
-
-
-
 
   cl::NDRange get_num_work_items(std::size_t num_pix_x, std::size_t num_pix_y) const
   {

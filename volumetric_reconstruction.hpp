@@ -2,6 +2,8 @@
 #define VOLUMETRIC_RECONSTRUCTION_HPP
 
 #include <vector>
+#include <cstdlib>
+#include <algorithm>
 
 #include "qcl.hpp"
 #include "math.hpp"
@@ -57,7 +59,7 @@ public:
   using result_vector2 = cl_float2;
 
   const std::size_t blocksize = 1000000;
-  const std::size_t desired_num_particles_per_tile = 100;
+  //const std::size_t desired_num_particles_per_tile = 100;
   const math::scalar additional_border_region_size = 100.0;
   const std::size_t local_size1D = 256;
   const std::size_t local_size2D = 16;
@@ -94,17 +96,24 @@ public:
 
     io::async_dataset_streamer<math::scalar> streamer{streamed_quantities};
 
-    math::scalar mean_particle_density = blocksize / _render_volume.get_volume();
-    math::scalar tile_diameter = std::cbrt(desired_num_particles_per_tile / mean_particle_density);
+    //math::scalar mean_particle_density = blocksize / _render_volume.get_volume();
+    math::scalar tile_diameter = 25.0;//std::cbrt(desired_num_particles_per_tile / mean_particle_density);
+    auto tiles_extent = _render_volume.get_extent(additional_border_region_size);
+
     std::array<long long int, 3> num_tiles{
-      {static_cast<long long int>(_render_volume.extent[0] / tile_diameter),
-       static_cast<long long int>(_render_volume.extent[1] / tile_diameter),
-       static_cast<long long int>(_render_volume.extent[2] / tile_diameter)}
+      {static_cast<long long int>(tiles_extent[0] / tile_diameter),
+       static_cast<long long int>(tiles_extent[1] / tile_diameter),
+       static_cast<long long int>(tiles_extent[2] / tile_diameter)
+      }
     };
+
+    for(std::size_t i = 0; i < 3; ++i)
+      if(num_tiles[i] < 1)
+        num_tiles[i] = 1;
 
     util::grid_coordinate_translator<3> tile_grid{
       _render_volume.center,
-      _render_volume.get_extent(additional_border_region_size),
+      tiles_extent,
       num_tiles
     };
 
@@ -120,6 +129,7 @@ public:
               << num_tiles[2] << " tiles." << std::endl;
 
     std::vector<result_vector4> particles(blocksize);
+    std::vector<result_scalar> smoothing_distances(blocksize);
     std::vector<result_vector4> filtered_particles(blocksize);
     std::vector<std::vector<result_scalar>> input_quantities(
           quantity_to_reconstruct.get_required_datasets().size());
@@ -171,7 +181,8 @@ public:
                                                             filtered_particles,
                                                             quantity_to_reconstruct,
                                                             input_quantities,
-                                                            maximum_smoothing_distance);
+                                                            maximum_smoothing_distance,
+                                                            smoothing_distances);
 
       std::cout << "Processing "
                 << num_filtered_particles
@@ -194,6 +205,7 @@ public:
 
         // Fill tiles and sort particles into tiles
         sort_into_tiles(filtered_particles,
+                      smoothing_distances,
                       num_filtered_particles,
                       tile_grid,
                       tiles,
@@ -323,12 +335,14 @@ private:
                         std::vector<result_vector4>& filtered_particles,
                         const reconstruction_quantity::quantity& quantity_to_reconstruct,
                         std::vector<std::vector<result_scalar>>& quantities,
-                        math::scalar& max_smoothing_distance) const
+                        math::scalar& max_smoothing_distance,
+                        std::vector<result_scalar>& smoothing_distances) const
   {
 
     assert(filtered_particles.size() >= current_block.get_num_available_rows());
     for(std::size_t i = 0; i < quantities.size(); ++i)
       assert(quantities[i].size() >= current_block.get_num_available_rows());
+    assert(smoothing_distances.size() >= current_block.get_num_available_rows());
 
     std::size_t num_filtered_particles = 0;
     max_smoothing_distance = 0.0;
@@ -339,7 +353,9 @@ private:
       access.select_dataset(0);
       math::vector3 coordinate;
       for(std::size_t j = 0; j < 3; ++j)
-        coordinate[j] = access(current_block, i, j);
+        // The static_cast ensures that the rounding errors
+        // remain consistent
+        coordinate[j] = static_cast<result_scalar>(access(current_block, i, j));
 
       access.select_dataset(1);
       math::scalar smoothing_length = 0.5 * access(current_block, i);
@@ -373,6 +389,8 @@ private:
           quantities[j][num_filtered_particles] =
               static_cast<result_scalar>(scaling_factors[j] * access(current_block, i));
         }
+        smoothing_distances[num_filtered_particles] =
+            static_cast<result_scalar>(smoothing_length);
 
         ++num_filtered_particles;
       }
@@ -418,6 +436,7 @@ private:
 
   /// Prepares the tile data structure and sorts particles into their tiles
   void sort_into_tiles(const std::vector<result_vector4>& filtered_particles,
+                     const std::vector<result_scalar>& smoothing_distances,
                      std::size_t num_filtered_particles,
                      const util::grid_coordinate_translator<3>& tile_grid,
                      util::multi_array<result_vector4>& tiles_buffer,
@@ -440,7 +459,8 @@ private:
       auto grid_idx = tile_grid(particle_coordinates);
       assert(tile_grid.is_within_bounds(grid_idx));
 
-      tiles_buffer[tile_grid.unsigned_grid_index(grid_idx)].s[0] += 1.0f;
+      auto grid_uidx = tile_grid.unsigned_grid_index(grid_idx);
+      tiles_buffer[grid_uidx].s[0] += 1.0f;
     }
 
     // Set offsets for particles
@@ -481,6 +501,9 @@ private:
 
       // Increase number of already placed particles
       tiles_buffer[grid_uidx].s[1] += 1;
+      // Update maximum smoothing length of tile
+      if(tiles_buffer[grid_uidx].s[3] < smoothing_distances[i])
+        tiles_buffer[grid_uidx].s[3] = smoothing_distances[i];
     }
 
 
@@ -537,9 +560,7 @@ public:
     this->_screen_basis_vector1 =
         math::normalize(math::matrix_vector_mult(roll_matrix, v2));
 
-    _min_position = _position;
-    _min_position -= (_num_pixels[0]/2.0) * _pixel_size * _screen_basis_vector0;
-    _min_position -= (_num_pixels[1]/2.0) * _pixel_size * _screen_basis_vector1;
+    update_min_position();
   }
 
   std::size_t get_num_pixels(std::size_t dim) const
@@ -559,7 +580,30 @@ public:
     return _pixel_size;
   }
 
+  const math::vector3& get_position() const
+  {
+    return _position;
+  }
+
+  const math::vector3& get_look_at() const
+  {
+    return _look_at;
+  }
+
+  void set_position(const math::vector3& pos)
+  {
+    this->_position = pos;
+    update_min_position();
+  }
+
 private:
+  void update_min_position()
+  {
+    _min_position = _position;
+    _min_position -= (_num_pixels[0]/2.0) * _pixel_size * _screen_basis_vector0;
+    _min_position -= (_num_pixels[1]/2.0) * _pixel_size * _screen_basis_vector1;
+  }
+
   math::vector3 _position;
   math::vector3 _look_at;
 
@@ -625,33 +669,111 @@ private:
   camera _cam;
 };
 
-class volumetric_integration
+class volumetric_tomography
 {
 public:
   using result_scalar = volumetric_reconstruction::result_scalar;
 
-  volumetric_integration(const qcl::device_context_ptr& ctx,
-                         const volume_cutout& render_volume,
-                         const H5::DataSet& coordinates,
-                         const H5::DataSet& smoothing_lengths)
-    : _ctx{ctx},
-      _render_volume{render_volume},
-      _coordinates{coordinates},
-      _smoothing_lengths{smoothing_lengths}
+  volumetric_tomography(const camera& cam)
+    : _cam{cam}
   {}
 
-  void run(util::multi_array<result_scalar>& output,
-           std::size_t num_pix_x,
-           std::size_t num_pix_y)
+  void create_tomographic_cube(volumetric_reconstruction& reconstruction,
+                               const reconstruction_quantity::quantity& reconstructed_quantity,
+                               math::scalar z_range,
+                               util::multi_array<result_scalar>& output)
   {
+    std::size_t num_pixels_z = static_cast<std::size_t>(z_range / _cam.get_pixel_size());
+    if(num_pixels_z == 0)
+      num_pixels_z = 1;
+
+    output = util::multi_array<result_scalar>{_cam.get_num_pixels(0),
+                                              _cam.get_num_pixels(1),
+                                              num_pixels_z};
+
+    std::fill(output.begin(), output.end(), 0.0f);
+
+    camera moving_cam = _cam;
+
+    std::size_t z = 0;
+    for(math::scalar delta_z = 0.0;
+        delta_z < z_range;
+        delta_z += moving_cam.get_pixel_size(), ++z)
+    {
+      std::cout << "delta_z = " << delta_z << ", z = " << moving_cam.get_position()[2] << std::endl;
+
+      moving_cam.set_position(_cam.get_position() + delta_z * moving_cam.get_look_at());
+
+      util::multi_array<result_scalar> slice_data;
+      volumetric_slice slice{moving_cam};
+      slice.create_slice(reconstruction, reconstructed_quantity, slice_data);
+
+      assert(slice_data.get_dimension() == 2);
+      assert(slice_data.get_extent_of_dimension(0) == _cam.get_num_pixels(0));
+      assert(slice_data.get_extent_of_dimension(1) == _cam.get_num_pixels(1));
+
+      for(std::size_t y = 0; y < _cam.get_num_pixels(1); ++y)
+        for(std::size_t x = 0; x < _cam.get_num_pixels(0); ++x)
+        {
+          std::size_t output_idx [] = {x,y,z};
+          std::size_t slice_idx [] = {x,y};
+          output[output_idx] = slice_data[slice_idx];
+        }
+    }
 
   }
 
 private:
-  qcl::device_context_ptr _ctx;
-  volume_cutout _render_volume;
-  H5::DataSet _coordinates;
-  H5::DataSet _smoothing_lengths;
+  camera _cam;
+};
+
+class volumetric_integration
+{
+public:
+  using result_scalar = volumetric_reconstruction::result_scalar;
+  using result_vector4 = volumetric_reconstruction::result_vector4;
+
+  volumetric_integration(const camera& cam)
+    : _cam{cam}
+  {}
+
+  void create_projection(volumetric_reconstruction& reconstruction,
+                         const reconstruction_quantity::quantity& reconstructed_quantity,
+                         math::scalar z_range,
+                         util::multi_array<result_scalar>& output)
+  {
+    output = util::multi_array<result_scalar>{_cam.get_num_pixels(0),
+                                              _cam.get_num_pixels(1)};
+
+    std::fill(output.begin(), output.end(), 0.0f);
+    std::size_t total_num_pixels = _cam.get_num_pixels(0)
+                                 * _cam.get_num_pixels(1);
+
+    std::vector<result_vector4> evaluation_points(total_num_pixels);
+
+    for(std::size_t y = 0; y < _cam.get_num_pixels(1); ++y)
+      for(std::size_t x = 0; x < _cam.get_num_pixels(0); ++x)
+      {
+        math::vector3 pixel_coord = _cam.get_pixel_coordinate(x,y);
+        result_vector4 evaluation_point;
+        for(std::size_t i = 0; i < 3; ++i)
+          evaluation_point.s[i] = static_cast<result_scalar>(pixel_coord[i]);
+
+        evaluation_points[y * _cam.get_num_pixels(0) + x] = evaluation_point;
+      }
+
+    bool is_zrange_reached = false;
+
+    while(!is_zrange_reached)
+    {
+
+
+
+    }
+  }
+
+private:
+  camera _cam;
 };
 
 }
