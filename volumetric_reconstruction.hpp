@@ -58,7 +58,7 @@ public:
   using result_vector3 = cl_float3;
   using result_vector2 = cl_float2;
 
-  const std::size_t blocksize = 1000000;
+  const std::size_t blocksize = 10000000;
   //const std::size_t desired_num_particles_per_tile = 100;
   const math::scalar additional_border_region_size = 100.0;
   const std::size_t local_size1D = 256;
@@ -695,14 +695,12 @@ public:
 
     camera moving_cam = _cam;
 
-    std::size_t z = 0;
-    for(math::scalar delta_z = 0.0;
-        delta_z < z_range;
-        delta_z += moving_cam.get_pixel_size(), ++z)
+    for(std::size_t z = 0; z < num_pixels_z; ++z)
     {
-      std::cout << "delta_z = " << delta_z << ", z = " << moving_cam.get_position()[2] << std::endl;
+      std::cout << "z = " << z << std::endl;
 
-      moving_cam.set_position(_cam.get_position() + delta_z * moving_cam.get_look_at());
+      moving_cam.set_position(_cam.get_position()
+                              + z * _cam.get_pixel_size() * moving_cam.get_look_at());
 
       util::multi_array<result_scalar> slice_data;
       volumetric_slice slice{moving_cam};
