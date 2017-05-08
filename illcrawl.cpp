@@ -250,7 +250,7 @@ int main(int argc, char** argv)
   illcrawl::math::vector3 camera_look_at = {{0., 0., 1.}};
   illcrawl::volume_cutout total_render_volume{center, volume_size, periodic_wraparound};
 
-  illcrawl::math::vector3 camera_pos = {{0.0, distribution_center[1], distribution_center[2]-1000.0}};
+  illcrawl::math::vector3 camera_pos = {{0.0, distribution_center[1], distribution_center[2]-10.0}};
 
   illcrawl::volumetric_reconstruction reconstruction{
         ctx,
@@ -263,9 +263,13 @@ int main(int argc, char** argv)
   illcrawl::camera cam{camera_pos, camera_look_at, 0.0, 1500.0, 1024, 1024};
 
   render_result result;
-  illcrawl::volumetric_tomography integrator{cam};
-  integrator.create_tomographic_cube(reconstruction, *xray_emission, 2000.0, result);
 
+  /*
+  illcrawl::volumetric_tomography tomography{cam};
+  integrator.create_tomographic_cube(reconstruction, *xray_emission, 10.0, result);
+  */
+  illcrawl::volumetric_integration integrator{cam};
+  integrator.create_projection(reconstruction, *xray_emission, 10.0, 1000.0, result);
 
   illcrawl::util::fits<result_scalar> result_file{"illcrawl_render.fits"};
   result_file.save(result);

@@ -356,8 +356,9 @@ __kernel void volumetric_reconstruction(
                 // assume as search radius the distance to the particle with
                 // the lowest contribution (i.e. the farthest particle)
                 if (is_nearest_neighbor_list_nonzero(weights))
-                  search_radius = get_distance_from_weight3d(
-                      nearest_neighbor_list_min(weights));
+                  search_radius = fmin(search_radius,
+                                       get_distance_from_weight3d(
+                                          nearest_neighbor_list_min(weights)));
               }
             }
           }
@@ -408,6 +409,46 @@ __kernel void finalize_volumetric_reconstruction(int num_evaluation_points,
     output[gid] = dot_product / weight_sum;
   }
 }
+
+__constant scalar machine_epsilon = 1.e-7f;
+
+__kernel void volumetric_reconstruction(
+    int is_first_run,
+    __global vector4* tiles,
+    int3 num_tiles,
+    vector3 tiles_min_corner,
+    vector3 tile_sizes,
+
+    __global vector4* particles,
+    scalar maximum_smoothing_length,
+
+    int num_evaluation_points,
+    __global vector4* evaluation_points_coordinates,
+    __global scalar* weight_sums,
+    __global scalar* estimates,
+    __global scalar* min_weights,
+    __global scalar* min_values,
+    __global int* num_contributions,
+
+    __global scalar* quantity)
+{
+  int gid = get_global_id(0);
+
+
+  if(gid < num_evaluation_points)
+  {
+    scalar weight_sum = 0.0f;
+    scalar current_estimate = 0.0f;
+
+    if(!is_first_run)
+    {
+      weight_sum = weight_sums[gid];
+      current_estimate = estimates[gid];
+    }
+  }
+
+}
+
 /*
 __kernel void volumetric_integration(__global int* num_evaluation_points,
                                      __global scalar* values,

@@ -4,6 +4,7 @@
 #include <vector>
 #include <cstdlib>
 #include <algorithm>
+#include <random>
 
 #include "qcl.hpp"
 #include "math.hpp"
@@ -12,6 +13,7 @@
 #include "grid.hpp"
 #include "multi_array.hpp"
 #include "coordinate_system.hpp"
+#include "integration.hpp"
 
 namespace illcrawl {
 
@@ -58,7 +60,7 @@ public:
   using result_vector3 = cl_float3;
   using result_vector2 = cl_float2;
 
-  const std::size_t blocksize = 10000000;
+  const std::size_t blocksize = 700000;
   //const std::size_t desired_num_particles_per_tile = 100;
   const math::scalar additional_border_region_size = 100.0;
   const std::size_t local_size1D = 256;
@@ -167,14 +169,22 @@ public:
     bool is_first_block = true;
 
     io::buffer_accessor<math::scalar> access = streamer.create_buffer_accessor();
+
+    cl::Event kernel_finished;
+    cl_int err;
+
     io::async_for_each_block(streamer.begin_row_blocks(blocksize),
                              streamer.end_row_blocks(),
                              [&](const io::async_dataset_streamer<math::scalar>::const_iterator& current_block)
     {
+      // Don't bother if there's nothing to do..
+      if(current_block.get_num_available_rows() == 0)
+        return;
 
       // Filter the particles - only include those that are within
       // the render volume
       math::scalar maximum_smoothing_distance = 0.0;
+
       std::size_t num_filtered_particles = filter_particles(current_block,
                                                             access,
                                                             tile_grid,
@@ -210,6 +220,13 @@ public:
                       tile_grid,
                       tiles,
                       particles);
+        // Wait for the previous kernel to finish
+        if(!is_first_block)
+        {
+          err = kernel_finished.wait();
+          qcl::check_cl_error(err, "Error while waiting for the volumetric reconstruction kernel to finish.");
+        }
+
 
         // Start moving data to the GPU
         cl::Event tiles_transferred_event, particles_transferred_event;
@@ -224,7 +241,7 @@ public:
                                &particles_transferred_event);
 
 
-        cl_int err = quantity_transformed_event.wait();
+        err = quantity_transformed_event.wait();
         qcl::check_cl_error(err, "Error while waiting for the quantity transformation to complete");
 
         // Launch kernel
@@ -258,7 +275,7 @@ public:
         arguments.push(evaluation_point_values_buffer);
         arguments.push(quantity_buffer);
 
-        cl::Event kernel_finished;
+
 
         err = _ctx->get_command_queue().enqueueNDRangeKernel(*_kernel,
                                                              cl::NullRange,
@@ -267,12 +284,18 @@ public:
                                                              cl::NDRange(local_size1D), &dependencies, &kernel_finished);
         qcl::check_cl_error(err, "Could not enqueue volumetric reconstruction kernel");
 
-        err = kernel_finished.wait();
-        qcl::check_cl_error(err, "Error while waiting for the volumetric reconstruction kernel to finish.");
 
         is_first_block = false;
       }
     });
+
+    // Wait for the last kernel to finish
+    if(!is_first_block)
+    {
+      err = kernel_finished.wait();
+      qcl::check_cl_error(err, "Error while waiting for the volumetric reconstruction kernel to finish.");
+    }
+
 
     _num_reconstructed_points = evaluation_points.size();
     _ctx->create_buffer<result_scalar>(_reconstruction_result,
@@ -286,7 +309,7 @@ public:
     finalization_args.push(_reconstruction_result);
 
     cl::Event finalization_done;
-    cl_int err =_ctx->get_command_queue().enqueueNDRangeKernel(*_finalization_kernel,
+    err =_ctx->get_command_queue().enqueueNDRangeKernel(*_finalization_kernel,
                                                    cl::NullRange,
                                                    cl::NDRange(math::make_multiple_of(local_size1D,
                                                                                       evaluation_points.size())),
@@ -362,6 +385,7 @@ private:
 
       if(smoothing_length > max_smoothing_distance)
         max_smoothing_distance = smoothing_length;
+
 
       coordinate_system::correct_periodicity(tile_grid,
                                              _render_volume.periodic_wraparound_size,
@@ -544,7 +568,7 @@ public:
         _look_at[1] == v1[1] &&
         _look_at[2] == v1[2])
     {
-      v1 = {{1, 0, 0}};
+      v1 = {{0, 1, 0}};
     }
 
     v1 = math::cross(v1, _look_at);
@@ -569,6 +593,13 @@ public:
   }
 
   math::vector3 get_pixel_coordinate(std::size_t x_index, std::size_t y_index) const
+  {
+    return _min_position
+         + x_index * _pixel_size * _screen_basis_vector0
+         + y_index * _pixel_size * _screen_basis_vector1;
+  }
+
+  math::vector3 get_pixel_coordinate(math::scalar x_index, math::scalar y_index) const
   {
     return _min_position
          + x_index * _pixel_size * _screen_basis_vector0
@@ -630,7 +661,8 @@ public:
 
   void create_slice(volumetric_reconstruction& reconstruction,
            const reconstruction_quantity::quantity& reconstructed_quantity,
-           util::multi_array<result_scalar>& output) const
+           util::multi_array<result_scalar>& output,
+           std::size_t num_additional_samples = 0) const
   {
 
     output = util::multi_array<result_scalar>{_cam.get_num_pixels(0),
@@ -640,32 +672,74 @@ public:
     std::size_t total_num_pixels = _cam.get_num_pixels(0) *
                                    _cam.get_num_pixels(1);
 
-    std::vector<result_vector4> evaluation_points(total_num_pixels);
-    for(std::size_t x = 0; x < _cam.get_num_pixels(0); ++x)
+    std::random_device rd;
+    std::mt19937 random(rd());
+    std::uniform_real_distribution<math::scalar> uniform(-0.5, 0.5);
+
+    std::size_t samples_per_pixel = num_additional_samples + 1;
+
+    std::vector<result_vector4> evaluation_points(samples_per_pixel * total_num_pixels);
+
+    for(std::size_t i = 0; i < samples_per_pixel; ++i)
+    {
       for(std::size_t y = 0; y < _cam.get_num_pixels(1); ++y)
       {
-        math::vector3 pixel_coord = _cam.get_pixel_coordinate(x,y);
-        result_vector4 evaluation_point;
-        for(std::size_t i = 0; i < 3; ++i)
-          evaluation_point.s[i] = static_cast<result_scalar>(pixel_coord[i]);
+        for(std::size_t x = 0; x < _cam.get_num_pixels(0); ++x)
+        {
+          if(i == 0)
+          {
+            math::vector3 pixel_coord = _cam.get_pixel_coordinate(x,y);
+            evaluation_points[y * _cam.get_num_pixels(0) + x] =
+              vector3_to_cl_vector4(pixel_coord);
+          }
+          else
+          {
+            math::scalar sampled_x = static_cast<math::scalar>(x)+uniform(random);
+            math::scalar sampled_y = static_cast<math::scalar>(y)+uniform(random);
+            math::vector3 coord = _cam.get_pixel_coordinate(sampled_x, sampled_y);
 
-        evaluation_points[y * _cam.get_num_pixels(0) + x] = evaluation_point;
+            evaluation_points[y * _cam.get_num_pixels(0) + x + i * total_num_pixels] =
+              vector3_to_cl_vector4(coord);
+          }
+        }
       }
+    }
 
     reconstruction.run(evaluation_points, reconstructed_quantity);
 
     // Retrieve results
-    reconstruction.get_context()->memcpy_d2h(output.data(),
+    std::vector<result_scalar> result_buffer(samples_per_pixel * total_num_pixels);
+    reconstruction.get_context()->memcpy_d2h(result_buffer.data(),
                                              reconstruction.get_reconstruction(),
-                                             total_num_pixels);
+                                             samples_per_pixel * total_num_pixels);
 
-    std::transform(output.begin(), output.end(), output.begin(), [this](result_scalar x)
+    math::scalar dV = _cam.get_pixel_size()
+                    * _cam.get_pixel_size()
+                    * _cam.get_pixel_size();
+
+    for(std::size_t i = 0; i < samples_per_pixel; ++i)
     {
-      return x * _cam.get_pixel_size() * _cam.get_pixel_size() * _cam.get_pixel_size();
-    });
+      std::size_t offset = i * total_num_pixels;
+      for(std::size_t y = 0; y < _cam.get_num_pixels(1); ++y)
+        for(std::size_t x = 0; x < _cam.get_num_pixels(0); ++x)
+        {
+          std::size_t idx [] = {x,y};
+          math::scalar contribution =
+              result_buffer[y * _cam.get_num_pixels(0) + x + offset];
+          output[idx] += dV * contribution / static_cast<math::scalar>(samples_per_pixel);
+        }
+    }
   }
 
 private:
+  result_vector4 vector3_to_cl_vector4(const math::vector3& x) const
+  {
+    result_vector4 result;
+    for(std::size_t i = 0; i < 3; ++i)
+      result.s[i] = static_cast<result_scalar>(x[i]);
+    return result;
+  }
+
   camera _cam;
 };
 
@@ -730,6 +804,7 @@ class volumetric_integration
 public:
   using result_scalar = volumetric_reconstruction::result_scalar;
   using result_vector4 = volumetric_reconstruction::result_vector4;
+  using integrator = integration::runge_kutta_fehlberg<result_scalar, math::scalar>;
 
   volumetric_integration(const camera& cam)
     : _cam{cam}
@@ -738,6 +813,7 @@ public:
   void create_projection(volumetric_reconstruction& reconstruction,
                          const reconstruction_quantity::quantity& reconstructed_quantity,
                          math::scalar z_range,
+                         math::scalar integration_tolerance,
                          util::multi_array<result_scalar>& output)
   {
     output = util::multi_array<result_scalar>{_cam.get_num_pixels(0),
@@ -747,30 +823,101 @@ public:
     std::size_t total_num_pixels = _cam.get_num_pixels(0)
                                  * _cam.get_num_pixels(1);
 
-    std::vector<result_vector4> evaluation_points(total_num_pixels);
+    std::vector<integrator> integrators(total_num_pixels);
+    std::vector<std::size_t> integrator_ids(total_num_pixels);
 
+    std::vector<result_scalar> integrand_values(
+          integrator::required_num_evaluations * total_num_pixels);
+
+    std::vector<result_vector4> evaluation_points;
+    evaluation_points.reserve(integrator::required_num_evaluations * total_num_pixels);
+
+
+
+    while(!is_zrange_reached(integrators, z_range))
+    {
+      evaluation_points.clear();
+
+      std::size_t integrator_id = 0;
+      for(std::size_t y = 0; y < _cam.get_num_pixels(1); ++y)
+      {
+        for(std::size_t x = 0; x < _cam.get_num_pixels(0); ++x)
+        {
+          std::size_t pos = y * _cam.get_num_pixels(0) + x;
+/*
+          if(pos == 512*512)
+            std::cout << integrators[512*512].get_position() << " "
+                      << integrators[512*512].get_state() << " "
+                      << integrators[512*512].get_step_size() << std::endl;
+*/
+          if(integrators[pos].get_position() < z_range)
+          {
+            math::vector3 pixel_coord = _cam.get_pixel_coordinate(x,y);
+
+
+            integrator::evaluation_coordinates required_evaluations;
+            integrators[pos].obtain_next_step_coordinates(required_evaluations);
+
+            for(std::size_t i = 0; i < integrator::required_num_evaluations; ++i)
+            {
+              math::vector3 coord = pixel_coord;
+              coord += _cam.get_look_at() * required_evaluations[i];
+              result_vector4 evaluation_point;
+              for(std::size_t j = 0; j < 3; ++j)
+                evaluation_point.s[j] = static_cast<result_scalar>(coord[j]);
+
+              evaluation_points.push_back(evaluation_point);
+            }
+            integrator_ids[integrator_id] = pos;
+            ++integrator_id;
+          }
+        }
+      }
+
+      reconstruction.run(evaluation_points, reconstructed_quantity);
+      // Retrieve result
+      reconstruction.get_context()->memcpy_d2h(integrand_values.data(),
+                                              reconstruction.get_reconstruction(),
+                                              evaluation_points.size());
+      // Advance integrators
+      for(std::size_t i = 0;
+          integrator::required_num_evaluations * i < evaluation_points.size();
+          ++i)
+      {
+        std::size_t integrator_id = integrator_ids[i];
+        integrator::integrand_values values;
+
+        for(std::size_t j = 0; j < integrator::required_num_evaluations; ++j)
+          values[j] = integrand_values[integrator::required_num_evaluations * i + j];
+
+        integrators[integrator_id].advance(values, integration_tolerance, z_range);
+      }
+    }
+
+    // Store result
     for(std::size_t y = 0; y < _cam.get_num_pixels(1); ++y)
       for(std::size_t x = 0; x < _cam.get_num_pixels(0); ++x)
       {
-        math::vector3 pixel_coord = _cam.get_pixel_coordinate(x,y);
-        result_vector4 evaluation_point;
-        for(std::size_t i = 0; i < 3; ++i)
-          evaluation_point.s[i] = static_cast<result_scalar>(pixel_coord[i]);
+        std::size_t pos = y * _cam.get_num_pixels(0) + x;
+        std::size_t idx [] = {x,y};
 
-        evaluation_points[y * _cam.get_num_pixels(0) + x] = evaluation_point;
+        output[idx] = integrators[pos].get_state();
       }
-
-    bool is_zrange_reached = false;
-
-    while(!is_zrange_reached)
-    {
-
-
-
-    }
   }
 
 private:
+  bool is_zrange_reached(const std::vector<integrator>& integrators,
+                         math::scalar z_range) const
+  {
+    for(std::size_t i = 0; i < integrators.size(); ++i)
+      if(integrators[i].get_position() < z_range)
+      {
+        std::cout << "Running: " << i  << " " <<integrators[i].get_position() << " " << integrators[i].get_step_size() << std::endl;
+        return false;
+      }
+    return true;
+  }
+
   camera _cam;
 };
 

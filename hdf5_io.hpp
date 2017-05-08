@@ -346,6 +346,7 @@ protected:
                        Data_type* out) const
   {
     std::size_t output_offset = 0;
+
     for (std::size_t i = 0; i < _extent.size(); ++i)
     {
       std::size_t row_size = 1;
