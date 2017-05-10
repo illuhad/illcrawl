@@ -174,6 +174,8 @@ int main(int argc, char** argv)
                                           {"image_tile_based_reconstruction2D",
                                            "volumetric_reconstruction",
                                            "finalize_volumetric_reconstruction"});
+  global_ctx->global_register_source_file("interpolation_tree.cl",
+                                          {"tree_interpolation"});
 
   global_ctx->global_register_source_file("quantities.cl",
                                           // Kernels inside quantities.cl
@@ -245,31 +247,43 @@ int main(int argc, char** argv)
                   "illcrawl_render_emission.fits");
   */
 
+  /*
+  illcrawl::volumetric_tomography tomography{cam};
+  integrator.create_tomographic_cube(reconstruction, *xray_emission, 10.0, result);
+  */
+
   illcrawl::math::vector3 periodic_wraparound {{75000.0, 75000.0, 75000.0}};
   illcrawl::math::vector3 volume_size = {{2000.0, 2000.0, 2000.0}};
   illcrawl::math::vector3 camera_look_at = {{0., 0., 1.}};
   illcrawl::volume_cutout total_render_volume{center, volume_size, periodic_wraparound};
 
   illcrawl::math::vector3 camera_pos = {{0.0, distribution_center[1], distribution_center[2]-10.0}};
+  illcrawl::camera cam{camera_pos, camera_look_at, 0.0, 1500.0, 1024, 1024};
 
-  illcrawl::volumetric_reconstruction reconstruction{
+  render_result result;
+  /*
+  illcrawl::volumetric_nn8_reconstruction reconstruction{
         ctx,
         total_render_volume,
         loader.get_coordinates(),
         loader.get_smoothing_length()
   };
 
-
-  illcrawl::camera cam{camera_pos, camera_look_at, 0.0, 1500.0, 1024, 1024};
-
-  render_result result;
-
-  /*
-  illcrawl::volumetric_tomography tomography{cam};
-  integrator.create_tomographic_cube(reconstruction, *xray_emission, 10.0, result);
-  */
-  illcrawl::volumetric_integration integrator{cam};
+  illcrawl::volumetric_integration<illcrawl::volumetric_nn8_reconstruction> integrator{cam};
   integrator.create_projection(reconstruction, *xray_emission, 10.0, 1000.0, result);
+
+  illcrawl::util::fits<result_scalar> result_file{"illcrawl_render.fits"};
+  result_file.save(result); */
+
+
+  illcrawl::volumetric_tree_reconstruction reconstructor{
+    ctx, total_render_volume, loader.get_coordinates(), 7000000, 0.6};
+
+  illcrawl::volumetric_slice<illcrawl::volumetric_tree_reconstruction> slice{cam};
+  slice.create_slice(reconstructor, *xray_emission, result, 0);
+
+  //illcrawl::volumetric_tomography<illcrawl::volumetric_tree_reconstruction> tomography{cam};
+  //tomography.create_tomographic_cube(reconstructor, *xray_emission, 1000.0, result);
 
   illcrawl::util::fits<result_scalar> result_file{"illcrawl_render.fits"};
   result_file.save(result);

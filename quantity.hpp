@@ -12,6 +12,9 @@ namespace illcrawl {
 namespace reconstruction_quantity {
 
 
+
+
+
 class quantity
 {
 public:
@@ -149,6 +152,133 @@ public:
   }
 
   virtual ~interpolation_weight(){}
+};
+
+
+class quantity_transformation
+{
+public:
+  using result_scalar = cl_float;
+
+  quantity_transformation(const qcl::device_context_ptr& ctx,
+                          const quantity& q,
+                          std::size_t blocksize)
+    : _ctx{ctx}, _quantity{q}, _blocksize{blocksize}, _num_elements{0}
+  {
+    _input_quantities.resize(q.get_required_datasets().size());
+    _input_buffers.resize(q.get_required_datasets().size());
+    _transfers_complete_events.resize(q.get_required_datasets().size());
+
+    for(std::size_t i = 0; i < _input_quantities.size(); ++i)
+      _input_quantities[i] = std::vector<result_scalar>(blocksize);
+
+    for(std::size_t i = 0; i < _input_quantities.size(); ++i)
+      _ctx->create_input_buffer<result_scalar>(_input_buffers[i], blocksize);
+    _ctx->create_buffer<result_scalar>(_result, CL_MEM_READ_WRITE, blocksize);
+
+    _scaling_factors = _quantity.get_quantitiy_scaling_factors();
+  }
+
+  quantity_transformation(const quantity_transformation&) = delete;
+  quantity_transformation& operator=(const quantity_transformation&) = delete;
+
+  const cl::Buffer& get_result_buffer() const
+  {
+    return _result;
+  }
+
+  void retrieve_results(cl::Event* evt,
+                        std::vector<result_scalar>& out) const
+  {
+    out.resize(get_num_elements());
+    _ctx->memcpy_d2h_async(out.data(),
+                           get_result_buffer(),
+                           get_num_elements(),
+                           evt);
+  }
+
+  std::size_t get_num_elements() const
+  {
+    return _num_elements;
+  }
+
+  template<std::size_t N>
+  void queue_input_quantities(const std::array<result_scalar, N>& input_elements)
+  {
+    assert(N == _input_quantities.size());
+    queue_input_quantities(input_elements.data());
+  }
+
+  void queue_input_quantities(const std::vector<result_scalar>& input_elements)
+  {
+    assert(input_elements.size() == _input_quantities.size());
+    queue_input_quantities(input_elements.data());
+  }
+
+  void queue_input_quantities(const result_scalar* input_elements)
+  {
+    assert(_num_elements + 1 <= _blocksize);
+    for(std::size_t i = 0; i < _input_quantities.size(); ++i)
+      _input_quantities[i][_num_elements] =
+          static_cast<result_scalar>(_scaling_factors[i] * input_elements[i]);
+
+    ++_num_elements;
+  }
+
+  void clear()
+  {
+    _num_elements = 0;
+  }
+
+  void commit_data()
+  {
+    for(std::size_t i = 0; i < _input_quantities.size(); ++i)
+      _ctx->memcpy_h2d_async(_input_buffers[i],
+                             _input_quantities[i].data(),
+                             _num_elements,
+                             &_transfers_complete_events[i]);
+  }
+
+  void operator()(cl::Event* evt) const
+  {
+    qcl::kernel_ptr kernel = _quantity.get_kernel(_ctx);
+
+    qcl::kernel_argument_list args{kernel};
+    args.push(_result);
+    args.push(static_cast<cl_uint>(_num_elements));
+    for(std::size_t i = 0; i < _input_buffers.size(); ++i)
+      args.push(_input_buffers[i]);
+
+    cl_int err =_ctx->get_command_queue().enqueueNDRangeKernel(*kernel,
+                                                               cl::NullRange,
+                                                               cl::NDRange(math::make_multiple_of(
+                                                                 local_size,
+                                                                 _num_elements)),
+                                                               cl::NDRange(local_size),
+                                                               &_transfers_complete_events, evt);
+    qcl::check_cl_error(err, "Could not enqueue quantity transformation kernel.");
+  }
+
+  std::size_t get_num_quantities() const
+  {
+    return _input_quantities.size();
+  }
+private:
+  static constexpr std::size_t local_size = 256;
+
+  qcl::device_context_ptr _ctx;
+  const quantity& _quantity;
+  std::size_t _blocksize;
+
+  std::vector<std::vector<result_scalar>> _input_quantities;
+  std::vector<cl::Buffer> _input_buffers;
+
+  std::size_t _num_elements;
+
+  cl::Buffer _result;
+
+  std::vector<cl::Event> _transfers_complete_events;
+  std::vector<math::scalar> _scaling_factors;
 };
 
 }
