@@ -24,7 +24,7 @@ public:
   sparse_interpolation_tree(const std::vector<particle>& particles,
                             const qcl::device_context_ptr& ctx)
     : _ctx{ctx},
-      _kernel{_ctx->get_kernel("tree_interpolation")},
+      _kernel{ctx->get_kernel("tree_interpolation")},
       _is_first_run{true}
   {
     assert(ctx != nullptr);
@@ -108,7 +108,7 @@ public:
                            _mean_coordinates.data(),
                            _mean_coordinates.size(),
                            &(_tree_ready_events[3]));
-
+    std::cout << "Tree ready\n";
 
   }
 
@@ -236,6 +236,8 @@ private:
 
   void finalize_cells(global_cell_id cell)
   {
+    assert(cell_exists(cell));
+
     children_list subcells = _subcells[cell];
 
     if(is_cell_leaf(cell))
@@ -269,6 +271,7 @@ private:
           total_mass += particle_mass;
           for(std::size_t j = 0; j < 3; ++j)
           {
+            assert(cell < _mean_coordinates.size() && child_id < _mean_coordinates.size());
             _mean_coordinates[cell].s[j] += _mean_coordinates[child_id].s[j]
                                           * num_child_particles;
             // Center of mass for multipole
@@ -298,6 +301,8 @@ private:
              p.s[i] <= (cell_coordinate[i] + 0.5*cell_diameter + 0.1));
     }
 
+    assert(cell_exists(cell));
+
     if(_num_particles[cell] == 0)
     {
       // This should only happen for the root node
@@ -315,6 +320,7 @@ private:
         particle old_particle = _particle_for_cell[cell];
 
         subcell_id target_subcell = get_subcell_id(old_particle, cell_coordinate);
+        assert(target_subcell >= 0 && target_subcell < 8);
 
         // Create new leaf with the old particle
         global_cell_id new_leaf = add_cell(old_particle);
@@ -324,6 +330,7 @@ private:
       }
 
       subcell_id local_subcell_id = get_subcell_id(p, cell_coordinate);
+      assert(local_subcell_id >= 0 && local_subcell_id < 8);
 
       global_cell_id global_subcell_id =
           static_cast<global_cell_id>(_subcells[cell].s[local_subcell_id]);
