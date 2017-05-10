@@ -24,10 +24,12 @@ public:
   sparse_interpolation_tree(const std::vector<particle>& particles,
                             const qcl::device_context_ptr& ctx)
     : _ctx{ctx},
-      _kernel{ctx->get_kernel("tree_interpolation")},
       _is_first_run{true}
   {
     assert(ctx != nullptr);
+
+    std::cout << "Starting tree construction" << std::endl;
+    _kernel = _ctx->get_kernel("tree_interpolation");
 
     std::array<scalar,3> min_coordinates = {{-1.f, -1.f, -1.f}};
     std::array<scalar,3> max_coordinates = {{ 1.f,  1.f,  1.f}};

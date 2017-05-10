@@ -277,7 +277,7 @@ int main(int argc, char** argv)
 
 
   illcrawl::volumetric_tree_reconstruction reconstructor{
-    ctx, total_render_volume, loader.get_coordinates(), 7000000, 0.6};
+    ctx, total_render_volume, loader.get_coordinates(), 7000000, 0.4};
 
   illcrawl::volumetric_slice<illcrawl::volumetric_tree_reconstruction> slice{cam};
   slice.create_slice(reconstructor, *xray_emission, result, 0);
