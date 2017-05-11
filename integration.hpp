@@ -92,8 +92,11 @@ public:
 
     _step_size *= s;
 
+    if(_step_size < 0.1)
+      _step_size = 0.1;
+    /*
     if(_current_position + _step_size > integration_end)
-      _step_size = integration_end - _current_position;
+      _step_size = integration_end - _current_position;*/
   }
 
 private:

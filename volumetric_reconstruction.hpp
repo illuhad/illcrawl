@@ -1101,12 +1101,12 @@ public:
     evaluation_points.reserve(integrator::required_num_evaluations * total_num_pixels);
 
 
-
-    while(!is_zrange_reached(integrators, z_range))
+    std::size_t num_running_integrators = 0;
+    do
     {
       evaluation_points.clear();
 
-      std::size_t integrator_id = 0;
+      num_running_integrators = 0;
       for(std::size_t y = 0; y < _cam.get_num_pixels(1); ++y)
       {
         for(std::size_t x = 0; x < _cam.get_num_pixels(0); ++x)
@@ -1136,8 +1136,8 @@ public:
 
               evaluation_points.push_back(evaluation_point);
             }
-            integrator_ids[integrator_id] = pos;
-            ++integrator_id;
+            integrator_ids[num_running_integrators] = pos;
+            ++num_running_integrators;
           }
         }
       }
@@ -1148,9 +1148,7 @@ public:
                                               reconstruction.get_reconstruction(),
                                               evaluation_points.size());
       // Advance integrators
-      for(std::size_t i = 0;
-          integrator::required_num_evaluations * i < evaluation_points.size();
-          ++i)
+      for(std::size_t i = 0; i < num_running_integrators; ++i)
       {
         std::size_t integrator_id = integrator_ids[i];
         typename integrator::integrand_values values;
@@ -1160,7 +1158,9 @@ public:
 
         integrators[integrator_id].advance(values, integration_tolerance, z_range);
       }
+      std::cout << num_running_integrators << " integrators are still running.\n";
     }
+    while(num_running_integrators > 12000);
 
     // Store result
     for(std::size_t y = 0; y < _cam.get_num_pixels(1); ++y)
@@ -1174,17 +1174,7 @@ public:
   }
 
 private:
-  bool is_zrange_reached(const std::vector<integrator>& integrators,
-                         math::scalar z_range) const
-  {
-    for(std::size_t i = 0; i < integrators.size(); ++i)
-      if(integrators[i].get_position() < z_range)
-      {
-        std::cout << "Running: " << i  << " " <<integrators[i].get_position() << " " << integrators[i].get_step_size() << std::endl;
-        return false;
-      }
-    return true;
-  }
+  //static constexpr math::scalar range_epsilon = 0.1;
 
   camera _cam;
 };

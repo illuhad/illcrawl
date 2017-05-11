@@ -10,7 +10,7 @@ typedef float scalar;
 typedef int global_cell_id;
 typedef char subcell_id;
 
-#define MAX_TREE_DEPTH 32
+#define MAX_TREE_DEPTH 16
 
 
 
