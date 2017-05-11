@@ -34,6 +34,7 @@ int node_can_be_approximated(coordinate node_center,
 int is_node_leaf(global_cell_id* subcells)
 {
   int sum = 0;
+#pragma unroll 8
   for(int i = 0; i < 8; ++i)
   {
     sum += subcells[i];
@@ -46,7 +47,7 @@ scalar get_weight(vector3 particle_point, vector3 evaluation_point)
 {
   vector3 R = particle_point - evaluation_point;
   scalar r2_inv = 1.f / dot(R,R);
-  return r2_inv*r2_inv*r2_inv;
+  return r2_inv*r2_inv*r2_inv*r2_inv*r2_inv;
 }
 
 void fetch_children(global_cell_id cell,
@@ -75,10 +76,16 @@ void evaluate_cell(global_cell_id cell,
 {
   particle p = particles[cell];
 
-  *result += p.w * get_weight(p.xyz, evaluation_point.xyz);
+  scalar contribution = p.w*get_weight(p.xyz, evaluation_point.xyz);
+  scalar weight_contribution = num_particles[cell]
+                  * get_weight(mean_coordinates[cell].xyz, evaluation_point.xyz);
 
-  *weight_sum += num_particles[cell]
-                * get_weight(mean_coordinates[cell].xyz, evaluation_point.xyz);
+  //if(get_global_id(0)==512)
+  //  printf("q_i/r = %f, 1/r = %f\n", contribution, weight_contribution);
+
+  *result += contribution;
+  *weight_sum += weight_contribution;
+
 
 }
 
@@ -137,7 +144,6 @@ void interpolate(__global particle* particles,
 
   while(stack_frame >= 0)
   {
-
     if(stack[stack_frame].next_subcell >= 8)
     // The cell has already been fully processed - pop current stack frame
     {
@@ -236,6 +242,9 @@ __kernel void tree_interpolation(int is_first_run,
                 &value_sum,
                 &weight_sum);
 
+    //if(gid==512)
+    //  printf("value sum = %f, weight sum = %f\n", value_sum, weight_sum);
+
     if(is_first_run)
     {
       value_sum_state [gid] = value_sum;
@@ -247,6 +256,12 @@ __kernel void tree_interpolation(int is_first_run,
       weight_sum_state[gid] += weight_sum;
     }
 
+
+    if(weight_sum == 0.0f)
+    {
+      value_sum = 0.0f;
+      weight_sum = 1.0f;
+    }
 
     results[gid] = value_sum / weight_sum;
   }

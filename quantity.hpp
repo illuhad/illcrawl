@@ -26,6 +26,11 @@ public:
   }
   virtual qcl::kernel_ptr get_kernel(const qcl::device_context_ptr& ctx) const = 0;
 
+  virtual bool is_integrated_quantity() const
+  {
+    return false;
+  }
+
   virtual ~quantity(){}
 };
 
@@ -105,6 +110,11 @@ public:
     return ctx->get_kernel("xray_emission");
   }
 
+  virtual bool is_integrated_quantity() const override
+  {
+    return true;
+  }
+
   virtual ~xray_emission(){}
 };
 
@@ -119,6 +129,11 @@ public:
   virtual qcl::kernel_ptr get_kernel(const qcl::device_context_ptr& ctx) const override
   {
     return ctx->get_kernel("luminosity_weighted_temperature");
+  }
+
+  virtual bool is_integrated_quantity() const override
+  {
+    return true;
   }
 
   virtual ~luminosity_weighted_temperature(){}

@@ -730,10 +730,12 @@ public:
         // Create tree
         _tree = std::make_shared<sparse_interpolation_tree>(particles, _ctx);
 
+
         err = evaluation_points_transferred.wait();
         qcl::check_cl_error(err, "Error while waiting for the evaluation points to be transferred.");
 
         cl::Event evaluation_complete;
+
         _tree->evaluate_tree(_evaluation_points_buffer,
                              _reconstruction_value_sum_state_buffer,
                              _reconstruction_weight_sum_state_buffer,
@@ -965,7 +967,7 @@ public:
                                              reconstruction.get_reconstruction(),
                                              samples_per_pixel * total_num_pixels);
 
-/*
+#ifdef CPU_TREE_TEST
     for(std::size_t i = 0; i < evaluation_points.size(); ++i)
     {
       sparse_interpolation_tree::scalar weights = 0;
@@ -977,10 +979,12 @@ public:
       reconstruction.get_tree()->evaluate_single_point(point, 0.2, values, weights);
       result_buffer[i] = values / weights;
     }
-*/
-    math::scalar dV = _cam.get_pixel_size()
-                    * _cam.get_pixel_size()
-                    * _cam.get_pixel_size();
+#endif
+    math::scalar dV = 1.0;
+    if(reconstructed_quantity.is_integrated_quantity())
+      dV = _cam.get_pixel_size()
+         * _cam.get_pixel_size()
+         * _cam.get_pixel_size();
 
     for(std::size_t i = 0; i < samples_per_pixel; ++i)
     {
@@ -1112,12 +1116,6 @@ public:
         for(std::size_t x = 0; x < _cam.get_num_pixels(0); ++x)
         {
           std::size_t pos = y * _cam.get_num_pixels(0) + x;
-/*
-          if(pos == 512*512)
-            std::cout << integrators[512*512].get_position() << " "
-                      << integrators[512*512].get_state() << " "
-                      << integrators[512*512].get_step_size() << std::endl;
-*/
           if(integrators[pos].get_position() < z_range)
           {
             math::vector3 pixel_coord = _cam.get_pixel_coordinate(x,y);
@@ -1160,7 +1158,7 @@ public:
       }
       std::cout << num_running_integrators << " integrators are still running.\n";
     }
-    while(num_running_integrators > 12000);
+    while(num_running_integrators > 0);
 
     // Store result
     for(std::size_t y = 0; y < _cam.get_num_pixels(1); ++y)

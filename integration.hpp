@@ -84,22 +84,27 @@ public:
       s = std::pow(tolerance * _step_size / (2 * error), 1./4.);
     }
 
-    if(s < 0.95)
+    Coordinate_type new_step_size = s * _step_size;
+
+    if(s < 0.95 && _step_size > minimum_stepsize)
+    {
     // Reject approximation, go back to old position
       _current_position -= _step_size;
+    }
     else
       _state = estimate4;
 
-    _step_size *= s;
+    _step_size = new_step_size;
 
-    if(_step_size < 0.1)
-      _step_size = 0.1;
+    if(_step_size < minimum_stepsize)
+      _step_size = minimum_stepsize;
     /*
     if(_current_position + _step_size > integration_end)
       _step_size = integration_end - _current_position;*/
   }
 
 private:
+  static constexpr Coordinate_type minimum_stepsize = 0.1;
 
   T _state;
   Coordinate_type _step_size;

@@ -13,7 +13,15 @@ class sparse_interpolation_tree
 {
 public:
   using particle = cl_float4;
-  using children_list = cl_int8;
+
+  // children_list should be cl_int8 - but
+  // the allocator seems to be unable to
+  // align them correctly.
+  struct children_list
+  {
+    cl_int s [8];
+  };
+
   using particle_counter = cl_uint;
   using scalar = cl_float;
   using coordinate = cl_float4;
@@ -120,7 +128,8 @@ public:
                      const cl::Buffer& out,
                      std::size_t num_points,
                      scalar opening_angle,
-                     cl::Event* evt) const
+                     cl::Event* evt,
+                     bool retain_results = false) const
   {
     qcl::kernel_argument_list arguments{_kernel};
     arguments.push(static_cast<cl_int>(_is_first_run));
@@ -147,7 +156,8 @@ public:
                                                    &_tree_ready_events,
                                                    evt);
     qcl::check_cl_error(err, "Could not enqueue tree interpolation kernel.");
-    _is_first_run = false;
+
+    _is_first_run = !retain_results;
   }
 
   void evaluate_single_point(const math::vector3& position,
@@ -297,6 +307,8 @@ private:
                        math::scalar cell_diameter,
                        particle p)
   {
+    //p.s[3] = math::square(std::abs(_center.s[0]-p.s[0]))
+    //       + math::square(std::abs(_center.s[1]-p.s[1]));
     for(int i = 0; i < 3; ++i)
     {
       assert(p.s[i] >= (cell_coordinate[i] - 0.5*cell_diameter - 0.1) &&
@@ -352,8 +364,6 @@ private:
         global_cell_id new_leaf = add_cell(p);
         _subcells[cell].s[local_subcell_id] = new_leaf;
       }
-
-
     }
   }
 
