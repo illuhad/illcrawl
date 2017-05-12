@@ -122,6 +122,11 @@ public:
 
   }
 
+  void purge_state()
+  {
+    this->_is_first_run = true;
+  }
+
   void evaluate_tree(const cl::Buffer& evaluation_points,
                      const cl::Buffer& value_sum_state,
                      const cl::Buffer& weight_sum_state,

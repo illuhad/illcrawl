@@ -633,6 +633,9 @@ public:
       qcl::check_cl_error(err, "Error while waiting for the evaluation points to be transferred.");
 
       cl::Event evaluation_complete;
+      // Purge any previous results, so that our results are unaffected
+      // by the last calclation
+      _tree->purge_state();
       _tree->evaluate_tree(_evaluation_points_buffer,
                            _reconstruction_value_sum_state_buffer,
                            _reconstruction_weight_sum_state_buffer,
@@ -742,7 +745,8 @@ public:
                              _reconstruction_result,
                              evaluation_points.size(),
                              static_cast<result_scalar>(_opening_angle),
-                             &evaluation_complete);
+                             &evaluation_complete,
+                             true);
 
         err = evaluation_complete.wait();
         qcl::check_cl_error(err, "Error while executing tree interpolation kernel");
@@ -1140,11 +1144,15 @@ public:
         }
       }
 
-      reconstruction.run(evaluation_points, reconstructed_quantity);
-      // Retrieve result
-      reconstruction.get_context()->memcpy_d2h(integrand_values.data(),
+      if(num_running_integrators > 0)
+      {
+        // Execute reconstruction
+        reconstruction.run(evaluation_points, reconstructed_quantity);
+        // Retrieve result
+        reconstruction.get_context()->memcpy_d2h(integrand_values.data(),
                                               reconstruction.get_reconstruction(),
                                               evaluation_points.size());
+      }
       // Advance integrators
       for(std::size_t i = 0; i < num_running_integrators; ++i)
       {

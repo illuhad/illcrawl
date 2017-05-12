@@ -16,15 +16,17 @@ public:
 
   runge_kutta_fehlberg(Coordinate_type initial_position = Coordinate_type{},
                        T initial_state = T{},
+                       T first_evaluation = T{},
                        Coordinate_type initial_step_size = 1.0)
     : _state{initial_state},
       _current_position{initial_position},
+      _interval_start_evaluation{first_evaluation},
       _step_size{initial_step_size}
   {}
 
-  using evaluation_coordinates = std::array<Coordinate_type, 6>;
-  using integrand_values = std::array<T, 6>;
-  static constexpr std::size_t required_num_evaluations = 6;
+  using evaluation_coordinates = std::array<Coordinate_type, 4>;
+  using integrand_values = std::array<T, 4>;
+  static constexpr std::size_t required_num_evaluations = 4;
 
   Coordinate_type get_position() const
   {
@@ -43,12 +45,16 @@ public:
 
   void obtain_next_step_coordinates(evaluation_coordinates& next_step_coordinates) const
   {
-    next_step_coordinates[0] = _current_position;
-    next_step_coordinates[1] = _current_position + 1./4. * _step_size;
-    next_step_coordinates[2] = _current_position + 3./8. * _step_size;
-    next_step_coordinates[3] = _current_position + 12./13. * _step_size;
-    next_step_coordinates[4] = _current_position + _step_size;
-    next_step_coordinates[5] = _current_position + 1./2. * _step_size;
+    // k1 will be provided by the last evaluation of the previous interval
+    // next_step_coordinates[0] = _current_position;
+
+    // We do not need k2 since we are only interested in the equation
+    // dy/dz =f(z) and not dy/dz=f(y,z)
+    //next_step_coordinates[1] = _current_position + 1./4. * _step_size;
+    next_step_coordinates[0] = _current_position + 3./8. * _step_size;
+    next_step_coordinates[1] = _current_position + 12./13. * _step_size;
+    next_step_coordinates[2] = _current_position + _step_size;
+    next_step_coordinates[3] = _current_position + 1./2. * _step_size;
   }
 
   void advance(const integrand_values& values,
@@ -56,17 +62,17 @@ public:
                Coordinate_type integration_end)
   {
     T delta4 =
-           + 25./216.    * values[0]
-           + 1408./2565. * values[2]
-           + 2197./4101. * values[3]
-           - 1./5.       * values[4];
+           + 25./216.    * _interval_start_evaluation
+           + 1408./2565. * values[0]
+           + 2197./4101. * values[1]
+           - 1./5.       * values[2];
 
     T delta5 =
-           + 16./135.      * values[0]
-           + 6656./12825.  * values[2]
-           + 28561./56430. * values[3]
-           - 9./50.        * values[4]
-           + 2./55.        * values[5];
+           + 16./135.      * _interval_start_evaluation
+           + 6656./12825.  * values[0]
+           + 28561./56430. * values[1]
+           - 9./50.        * values[2]
+           + 2./55.        * values[3];
 
     delta4 *= _step_size;
     delta5 *= _step_size;
@@ -86,27 +92,37 @@ public:
 
     Coordinate_type new_step_size = s * _step_size;
 
-    if(s < 0.95 && _step_size > minimum_stepsize)
+    if(s < 0.95 && new_step_size > minimum_stepsize)
     {
     // Reject approximation, go back to old position
       _current_position -= _step_size;
     }
     else
+    {
+      // Accept approximation
       _state = estimate4;
+      _interval_start_evaluation = values[3];
+    }
 
     _step_size = new_step_size;
 
     if(_step_size < minimum_stepsize)
       _step_size = minimum_stepsize;
-    /*
+
     if(_current_position + _step_size > integration_end)
-      _step_size = integration_end - _current_position;*/
+      // The epsilon's job is to make sure that the condition
+      // get_position() < integration range turns false and a integration loop
+      // does not turn into an infinite loop.
+      _step_size = integration_end - _current_position + epsilon;
   }
 
 private:
-  static constexpr Coordinate_type minimum_stepsize = 0.1;
+  static constexpr Coordinate_type minimum_stepsize = 1.0;
+  static constexpr Coordinate_type epsilon = 0.01;
 
   T _state;
+  T _interval_start_evaluation;
+
   Coordinate_type _step_size;
   Coordinate_type _current_position;
 };

@@ -99,7 +99,7 @@ void evaluate_cell(global_cell_id cell,
  *      return cell evaluation
  *   else
  *   {
- *     scalar result;
+ *     scalar result = 0;
  *     for(subcell : cell.subcells)
  *     {
  *       if(subcell is nonempty)

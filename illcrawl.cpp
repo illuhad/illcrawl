@@ -286,7 +286,7 @@ int main(int argc, char** argv)
   //tomography.create_tomographic_cube(reconstructor, *xray_emission, 1000.0, result);
 
   illcrawl::volumetric_integration<illcrawl::volumetric_tree_reconstruction> integrator{cam};
-  integrator.create_projection(reconstructor, *xray_emission, 1000.0, 1000.0, result);
+  integrator.create_projection(reconstructor, *xray_emission, 1000.0, 100.0, result);
 
   illcrawl::util::fits<result_scalar> result_file{"illcrawl_render.fits"};
   result_file.save(result);
