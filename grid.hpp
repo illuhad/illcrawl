@@ -12,6 +12,15 @@ class grid_coordinate_translator
 {
 public:
   using grid_index = std::array<long long int, Dim>;
+  using grid_uindex = std::array<std::size_t, Dim>;
+
+  grid_coordinate_translator()
+    : _center{{0.0, 0.0, 0.0}},
+      _extent{{1.0,1.0,1.0}},
+      _cell_size{{1.0,1.0,1.0}},
+      _num_cells{{1,1,1}},
+      _min_corner{{-0.5,-0.5,-0.5}}
+  {}
 
   grid_coordinate_translator(const math::vector_n<Dim>& center,
                              const math::vector_n<Dim>& extent,
@@ -32,6 +41,15 @@ public:
   {
     for(std::size_t i = 0; i < Dim; ++i)
       _num_cells[i] = static_cast<std::size_t>(num_cells[i]);
+    init();
+  }
+
+  grid_coordinate_translator(const math::vector_n<Dim>& center,
+                             const math::vector_n<Dim>& extent,
+                             const grid_uindex& num_cells)
+    :_center{center}, _extent{extent}
+  {
+    _num_cells = num_cells;
     init();
   }
 
@@ -93,7 +111,7 @@ public:
     return result;
   }
 
-  const std::array<std::size_t, Dim>& get_num_cells() const
+  const grid_uindex& get_num_cells() const
   {
     return _num_cells;
   }
@@ -126,7 +144,7 @@ private:
   math::vector_n<Dim> _center;
   math::vector_n<Dim> _extent;
   math::vector_n<Dim> _cell_size;
-  std::array<std::size_t, Dim> _num_cells;
+  grid_uindex _num_cells;
   math::vector_n<Dim> _min_corner;
 };
 

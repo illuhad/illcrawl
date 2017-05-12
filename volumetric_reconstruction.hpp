@@ -14,6 +14,7 @@
 #include "multi_array.hpp"
 #include "coordinate_system.hpp"
 #include "interpolation_tree.hpp"
+#include "particle_tiles.hpp"
 
 #include "integration.hpp"
 
@@ -41,13 +42,14 @@ struct volume_cutout
     return extent[0] * extent[1] * extent[2];
   }
 
-  inline bool contains_point(const math::vector3& point) const
+  inline bool contains_point(const math::vector3& point,
+                             math::scalar additional_tolerance = 0.0) const
   {
     for(std::size_t i = 0; i < 3; ++i)
     {
-      if(point[i] < (center[i] - 0.5 * extent[i]))
+      if(point[i] < (center[i] - 0.5 * extent[i] - additional_tolerance))
         return false;
-      if(point[i] > (center[i] + 0.5 * extent[i]))
+      if(point[i] > (center[i] + 0.5 * extent[i] + additional_tolerance))
         return false;
     }
     return true;
@@ -83,9 +85,10 @@ public:
   using result_vector4 = cl_float4;
   using result_vector3 = cl_float3;
   using result_vector2 = cl_float2;
+  using particle = particle_tiles::particle;
 
-  const std::size_t blocksize = 700000;
   //const std::size_t desired_num_particles_per_tile = 100;
+  const math::scalar smoothing_length_scale_factor = 0.5;
   const math::scalar additional_border_region_size = 100.0;
   const std::size_t local_size1D = 256;
   const std::size_t local_size2D = 16;
@@ -93,14 +96,17 @@ public:
   volumetric_nn8_reconstruction(const qcl::device_context_ptr& ctx,
                             const volume_cutout& render_volume,
                             const H5::DataSet& coordinates,
-                            const H5::DataSet& smoothing_lengths)
+                            const H5::DataSet& smoothing_lengths,
+                            std::size_t blocksize = 100000)
     : _ctx{ctx},
       _render_volume{render_volume},
       _coordinates{coordinates},
       _smoothing_lengths{smoothing_lengths},
       _kernel{ctx->get_kernel("volumetric_reconstruction")},
       _finalization_kernel{ctx->get_kernel("finalize_volumetric_reconstruction")},
-      _num_reconstructed_points{0}
+      _num_reconstructed_points{0},
+      _blocksize{blocksize},
+      _transformed_quantity(blocksize)
   {
 
   }
@@ -120,63 +126,17 @@ public:
     for(const H5::DataSet& quantity : quantity_to_reconstruct.get_required_datasets())
       streamed_quantities.push_back(quantity);
 
+    std::size_t num_input_quantities =
+        quantity_to_reconstruct.get_required_datasets().size();
+    std::vector<result_scalar> input_quantities(num_input_quantities);
+
     io::async_dataset_streamer<math::scalar> streamer{streamed_quantities};
 
-    //math::scalar mean_particle_density = blocksize / _render_volume.get_volume();
-    math::scalar tile_diameter = 25.0;//std::cbrt(desired_num_particles_per_tile / mean_particle_density);
-    auto tiles_extent = _render_volume.get_extent(additional_border_region_size);
-
-    std::array<long long int, 3> num_tiles{
-      {static_cast<long long int>(tiles_extent[0] / tile_diameter),
-       static_cast<long long int>(tiles_extent[1] / tile_diameter),
-       static_cast<long long int>(tiles_extent[2] / tile_diameter)
-      }
-    };
-
-    for(std::size_t i = 0; i < 3; ++i)
-      if(num_tiles[i] < 1)
-        num_tiles[i] = 1;
-
-    util::grid_coordinate_translator<3> tile_grid{
-      _render_volume.center,
-      tiles_extent,
-      num_tiles
-    };
-
-    util::multi_array<result_vector4> tiles{
-      static_cast<std::size_t>(num_tiles[0]),
-      static_cast<std::size_t>(num_tiles[1]),
-      static_cast<std::size_t>(num_tiles[2])
-    };
-
-    std::cout << "Using "
-              << num_tiles[0] << "/"
-              << num_tiles[1] << "/"
-              << num_tiles[2] << " tiles." << std::endl;
-
-    std::vector<result_vector4> particles(blocksize);
-    std::vector<result_scalar> smoothing_distances(blocksize);
-    std::vector<result_vector4> filtered_particles(blocksize);
-    std::vector<std::vector<result_scalar>> input_quantities(
-          quantity_to_reconstruct.get_required_datasets().size());
-
-    cl::Buffer quantity_buffer;
-    std::vector<cl::Buffer> input_quantities_buffer(
-          quantity_to_reconstruct.get_required_datasets().size());
-    cl::Buffer tiles_buffer;
-    cl::Buffer particles_buffer;
     cl::Buffer evaluation_point_coordinate_buffer;
     cl::Buffer evaluation_point_weights_buffer;
     cl::Buffer evaluation_point_values_buffer;
 
-    _ctx->create_buffer<result_scalar>(quantity_buffer, CL_MEM_READ_WRITE, blocksize);
-    for(std::size_t i = 0; i < input_quantities_buffer.size(); ++i)
-    {
-      _ctx->create_input_buffer<result_scalar>(input_quantities_buffer[i], blocksize);
-      input_quantities[i] = std::vector<result_scalar>(blocksize);
-    }
-    _ctx->create_input_buffer<result_vector4>(tiles_buffer, tiles.get_num_elements());
-    _ctx->create_input_buffer<result_vector4>(particles_buffer, blocksize);
+
     _ctx->create_input_buffer<result_vector4>(evaluation_point_coordinate_buffer, evaluation_points.size());
     _ctx->create_buffer<nearest_neighbor_list>(evaluation_point_weights_buffer,
                                                CL_MEM_READ_WRITE,
@@ -186,141 +146,171 @@ public:
                                                evaluation_points.size());
 
     // Copy evaluation points to the GPU
-    _ctx->memcpy_h2d(evaluation_point_coordinate_buffer,
-                     evaluation_points.data(),
-                     evaluation_points.size());
+    cl::Event evaluation_points_transferred;
+    _ctx->memcpy_h2d_async(evaluation_point_coordinate_buffer,
+                           evaluation_points.data(),
+                           evaluation_points.size(),
+                           &evaluation_points_transferred);
 
     bool is_first_block = true;
 
-    io::buffer_accessor<math::scalar> access = streamer.create_buffer_accessor();
-
     cl::Event kernel_finished;
     cl_int err;
-
-    io::async_for_each_block(streamer.begin_row_blocks(blocksize),
-                             streamer.end_row_blocks(),
-                             [&](const io::async_dataset_streamer<math::scalar>::const_iterator& current_block)
+    if((_tiles != nullptr) &&
+       (streamer.get_num_rows() <= _blocksize))
     {
-      // Don't bother if there's nothing to do..
-      if(current_block.get_num_available_rows() == 0)
-        return;
+      // Reuse existing particles and tiles
+      cl_int err = evaluation_points_transferred.wait();
+      qcl::check_cl_error(err, "Error while waiting for the transfer "
+                               "of the evaluation points to complete.");
 
-      // Filter the particles - only include those that are within
-      // the render volume
-      math::scalar maximum_smoothing_distance = 0.0;
+      this->launch_reconstruction(evaluation_points.size(),
+                                  is_first_block,
+                                  evaluation_point_coordinate_buffer,
+                                  evaluation_point_values_buffer,
+                                  evaluation_point_weights_buffer,
+                                  &kernel_finished);
 
-      std::size_t num_filtered_particles = filter_particles(current_block,
-                                                            access,
-                                                            tile_grid,
-                                                            filtered_particles,
-                                                            quantity_to_reconstruct,
-                                                            input_quantities,
-                                                            maximum_smoothing_distance,
-                                                            smoothing_distances);
+      is_first_block = false;
+    }
+    else
+    {
 
-      std::cout << "Processing "
-                << num_filtered_particles
-                << " particles between "
-                << current_block.get_available_data_range_begin() << " / "
-                << current_block.get_available_data_range_end() << std::endl;
+      reconstruction_quantity::quantity_transformation transformation{
+        _ctx, quantity_to_reconstruct, _blocksize};
 
-      // Make sure we actually have work to do for
-      // this block before involving the GPU
-      if(num_filtered_particles > 0)
+
+      io::buffer_accessor<math::scalar> access = streamer.create_buffer_accessor();
+      io::async_for_each_block(streamer.begin_row_blocks(_blocksize),
+                               streamer.end_row_blocks(),
+                               [&](const io::async_dataset_streamer<math::scalar>::const_iterator& current_block)
       {
-        // Start transforming the quantities
-        cl::Event quantity_transformed_event;
-        transform_quantity(input_quantities,
-                           quantity_to_reconstruct,
-                           input_quantities_buffer,
-                           quantity_buffer,
-                           num_filtered_particles,
-                           &quantity_transformed_event);
+        // Don't bother if there's nothing to do..
+        if(current_block.get_num_available_rows() == 0)
+          return;
 
-        // Fill tiles and sort particles into tiles
-        sort_into_tiles(filtered_particles,
-                      smoothing_distances,
-                      num_filtered_particles,
-                      tile_grid,
-                      tiles,
-                      particles);
-        // Wait for the previous kernel to finish
-        if(!is_first_block)
+        transformation.clear();
+        _filtered_particles.clear();
+        _filtered_smoothing_lengths.clear();
+
+        for(std::size_t i = 0; i < current_block.get_num_available_rows(); ++i)
         {
-          err = kernel_finished.wait();
-          qcl::check_cl_error(err, "Error while waiting for the volumetric reconstruction kernel to finish.");
+          access.select_dataset(0);
+          math::vector3 coordinate;
+          for(std::size_t j = 0; j < 3; ++j)
+            // The static_cast ensures that the rounding errors
+            // remain consistent
+            coordinate[j] = static_cast<result_scalar>(access(current_block, i, j));
+
+          coordinate_system::correct_periodicity(_render_volume.get_bounding_box_min_corner(),
+                                                 _render_volume.get_bounding_box_max_corner(),
+                                                 _render_volume.periodic_wraparound_size,
+                                                 additional_border_region_size,
+                                                 coordinate);
+
+          if(_render_volume.contains_point(coordinate, additional_border_region_size))
+          {
+            access.select_dataset(1);
+            math::scalar smoothing_length =
+                smoothing_length_scale_factor * access(current_block, i);
+
+            for(std::size_t quantity_index = 0;
+                quantity_index < num_input_quantities;
+                ++quantity_index)
+            {
+              access.select_dataset(2 + quantity_index);
+              input_quantities[quantity_index] =
+                  static_cast<result_scalar>(access(current_block, i));
+            }
+
+            particle new_particle;
+            for(std::size_t j = 0; j < 3; ++j)
+              new_particle.s[j] = static_cast<result_scalar>(coordinate[j]);
+
+            _filtered_particles.push_back(new_particle);
+            _filtered_smoothing_lengths.push_back(static_cast<result_scalar>(smoothing_length));
+
+            transformation.queue_input_quantities(input_quantities);
+          }
         }
 
+        assert(_filtered_particles.size() == _filtered_smoothing_lengths.size());
 
-        // Start moving data to the GPU
-        cl::Event tiles_transferred_event, particles_transferred_event;
-        _ctx->memcpy_h2d_async(tiles_buffer,
-                               tiles.data(),
-                               tiles.get_num_elements(),
-                               &tiles_transferred_event);
+        // Make sure we actually have work to do for
+        // this block before involving the GPU
+        if(_filtered_particles.size() > 0)
+        {
+          std::cout << "Processing "
+                    << _filtered_particles.size()
+                    << " particles between "
+                    << current_block.get_available_data_range_begin() << " / "
+                    << current_block.get_available_data_range_end() << std::endl;
 
-        _ctx->memcpy_h2d_async(particles_buffer,
-                               particles.data(),
-                               blocksize,
-                               &particles_transferred_event);
+          transformation.commit_data();
+          cl::Event transformation_complete;
+          // Transform quantities
+          transformation(&transformation_complete);
 
-
-        err = quantity_transformed_event.wait();
-        qcl::check_cl_error(err, "Error while waiting for the quantity transformation to complete");
-
-        // Launch kernel
-        std::vector<cl::Event> dependencies = {tiles_transferred_event,
-                                               particles_transferred_event};
-
-
-        math::vector3 tiles_min_corner = tile_grid.get_grid_min_corner();
-        math::vector3 tile_sizes = tile_grid.get_cell_sizes();
-
-        qcl::kernel_argument_list arguments{_kernel};
-        arguments.push(static_cast<cl_int>(is_first_block));
-        arguments.push(tiles_buffer);
-        arguments.push(cl_int3{{static_cast<cl_int>(num_tiles[0]),
-                                static_cast<cl_int>(num_tiles[1]),
-                                static_cast<cl_int>(num_tiles[2])}});
-
-        arguments.push(result_vector3{{static_cast<result_scalar>(tiles_min_corner[0]),
-                                       static_cast<result_scalar>(tiles_min_corner[1]),
-                                       static_cast<result_scalar>(tiles_min_corner[2])}});
-
-        arguments.push(result_vector3{{static_cast<result_scalar>(tile_sizes[0]),
-                                       static_cast<result_scalar>(tile_sizes[1]),
-                                       static_cast<result_scalar>(tile_sizes[2])}});
-
-        arguments.push(particles_buffer);
-        arguments.push(static_cast<result_scalar>(maximum_smoothing_distance));
-        arguments.push(static_cast<cl_int>(evaluation_points.size()));
-        arguments.push(evaluation_point_coordinate_buffer);
-        arguments.push(evaluation_point_weights_buffer);
-        arguments.push(evaluation_point_values_buffer);
-        arguments.push(quantity_buffer);
+          err = transformation_complete.wait();
+          qcl::check_cl_error(err, "Error while waiting for the quantity transformation"
+                                   "to complete.");
 
 
+          cl::Event transformation_result_retrieved;
+          transformation.retrieve_results(&transformation_result_retrieved,
+                                          _transformed_quantity);
 
-        err = _ctx->get_command_queue().enqueueNDRangeKernel(*_kernel,
-                                                             cl::NullRange,
-                                                             cl::NDRange(math::make_multiple_of(local_size1D,
-                                                                                        evaluation_points.size())),
-                                                             cl::NDRange(local_size1D), &dependencies, &kernel_finished);
-        qcl::check_cl_error(err, "Could not enqueue volumetric reconstruction kernel");
+          err = transformation_result_retrieved.wait();
+          qcl::check_cl_error(err, "Error while retrieving the quantity transformation results.");
+
+          assert(_transformed_quantity.size() == _filtered_particles.size());
+
+          for(std::size_t i = 0; i < _filtered_particles.size(); ++i)
+            _filtered_particles[i].s[3] = _transformed_quantity[i];
+
+          // Release old memory first by setting _tiles to null
+          _tiles = nullptr;
+          this->_tiles = std::make_shared<particle_tiles>(_ctx,
+                                                          _filtered_particles,
+                                                          _filtered_smoothing_lengths);
+
+          // Wait for the previous kernel to finish, if we are not
+          // in the first run
+          if(!is_first_block)
+          {
+            err = kernel_finished.wait();
+            qcl::check_cl_error(err, "Error while waiting for the volumetric_nn8_reconstruction"
+                                   " kernel to finish.");
+          }
+          else
+          {
+            // and wait for the transfer of the evaluation points to complete, if we are in the first run
+            err = evaluation_points_transferred.wait();
+            qcl::check_cl_error(err, "Error while waiting for the transfer "
+                                     "of the evaluation points to complete.");
+          }
+          this->launch_reconstruction(evaluation_points.size(),
+                                      is_first_block,
+                                      evaluation_point_coordinate_buffer,
+                                      evaluation_point_values_buffer,
+                                      evaluation_point_weights_buffer,
+                                      &kernel_finished);
 
 
-        is_first_block = false;
+          is_first_block = false;
+
+        }
+
+      });
+
+      // Wait for the last kernel to finish
+      if(!is_first_block)
+      {
+        err = kernel_finished.wait();
+        qcl::check_cl_error(err, "Error while waiting for the volumetric reconstruction kernel to finish.");
       }
-    });
 
-    // Wait for the last kernel to finish
-    if(!is_first_block)
-    {
-      err = kernel_finished.wait();
-      qcl::check_cl_error(err, "Error while waiting for the volumetric reconstruction kernel to finish.");
     }
-
-
     _num_reconstructed_points = evaluation_points.size();
     _ctx->create_buffer<result_scalar>(_reconstruction_result,
                                        CL_MEM_READ_WRITE,
@@ -337,7 +327,9 @@ public:
                                                    cl::NullRange,
                                                    cl::NDRange(math::make_multiple_of(local_size1D,
                                                                                       evaluation_points.size())),
-                                                   cl::NDRange(local_size1D), nullptr, &finalization_done);
+                                                   cl::NDRange(local_size1D),
+                                                   nullptr,
+                                                   &finalization_done);
     qcl::check_cl_error(err, "Could not enqueue finalization kernel.");
 
     err = finalization_done.wait();
@@ -365,197 +357,51 @@ public:
   }
 private:
 
-  /// Filters the particles in the current block such that only particles
-  /// within the rendering volume remain, discarding any other particles.
-  /// Additionally, the particles are transformed into the float4 vector
-  /// format used by the GPU:
-  /// particle.x -- x coordinate
-  /// particle.y -- y coordinate
-  /// particle.z -- z coordinate
-  /// particle.w -- particle id i, such that in the quantity buffer
-  /// quantities[i] refers to the value associated with this particle.
-  /// Also estimates the maximum smoothing distance of the particle
-  /// collection, and fills the quantities buffer.
-  std::size_t filter_particles(const io::async_dataset_streamer<math::scalar>::const_iterator& current_block,
-                        io::buffer_accessor<math::scalar>& access,
-                        const util::grid_coordinate_translator<3>& tile_grid,
-                        std::vector<result_vector4>& filtered_particles,
-                        const reconstruction_quantity::quantity& quantity_to_reconstruct,
-                        std::vector<std::vector<result_scalar>>& quantities,
-                        math::scalar& max_smoothing_distance,
-                        std::vector<result_scalar>& smoothing_distances) const
+  void launch_reconstruction(std::size_t num_evaluation_points,
+                             bool is_first_run,
+                             const cl::Buffer& evaluation_points,
+                             const cl::Buffer& evaluation_points_values,
+                             const cl::Buffer& evaluation_points_weights,
+                             cl::Event* kernel_finished_event)
   {
+    assert(_tiles != nullptr);
 
-    assert(filtered_particles.size() >= current_block.get_num_available_rows());
-    for(std::size_t i = 0; i < quantities.size(); ++i)
-      assert(quantities[i].size() >= current_block.get_num_available_rows());
-    assert(smoothing_distances.size() >= current_block.get_num_available_rows());
+    auto num_tiles = _tiles->get_num_tiles();
+    auto tiles_min_corner = _tiles->get_tiles_min_corner();
+    auto tile_sizes = _tiles->get_tile_sizes();
 
-    std::size_t num_filtered_particles = 0;
-    max_smoothing_distance = 0.0;
-    auto scaling_factors = quantity_to_reconstruct.get_quantitiy_scaling_factors();
-
-    for(std::size_t i = 0; i < current_block.get_num_available_rows(); ++i)
-    {
-      access.select_dataset(0);
-      math::vector3 coordinate;
-      for(std::size_t j = 0; j < 3; ++j)
-        // The static_cast ensures that the rounding errors
-        // remain consistent
-        coordinate[j] = static_cast<result_scalar>(access(current_block, i, j));
-
-      access.select_dataset(1);
-      math::scalar smoothing_length = 0.5 * access(current_block, i);
-
-      if(smoothing_length > max_smoothing_distance)
-        max_smoothing_distance = smoothing_length;
-
-
-      coordinate_system::correct_periodicity(tile_grid,
-                                             _render_volume.periodic_wraparound_size,
-                                             smoothing_length,
-                                             coordinate);
-      auto grid_idx = tile_grid(coordinate);
-      // Filter the particles by position - only include those which
-      // are within the tile grid
-
-      if(tile_grid.is_within_bounds(grid_idx))
-      {
-        // Build particle
-        result_vector4 particle;
-        for(std::size_t j = 0; j < 3; ++j)
-          particle.s[j] = static_cast<result_scalar>(coordinate[j]);
-        particle.s[3] = static_cast<result_scalar>(num_filtered_particles);
-
-        filtered_particles[num_filtered_particles] = particle;
-
-        // Retrieve quantities belonging to the particle
-        for(std::size_t j = 0; j < quantities.size(); ++j)
-        {
-          access.select_dataset(2 + j);
-
-          quantities[j][num_filtered_particles] =
-              static_cast<result_scalar>(scaling_factors[j] * access(current_block, i));
-        }
-        smoothing_distances[num_filtered_particles] =
-            static_cast<result_scalar>(smoothing_length);
-
-        ++num_filtered_particles;
-      }
-    }
-    return num_filtered_particles;
-  }
-
-  /// Applies the quantity transformation Q based on input quantities q_i
-  /// such that output_j = Q(q_0j, q_1j, ..., q_ij). This calculation
-  /// is done asynchronously on the GPU, i.e. it is mandatory to wait for
-  /// the Event \c evt before accessing the \c output_buffer.
-  void transform_quantity(const std::vector<std::vector<result_scalar>>& input_quantities,
-                          const reconstruction_quantity::quantity& quantity_to_reconstruct,
-                          const std::vector<cl::Buffer>& input_buffers,
-                          const cl::Buffer& output_buffer,
-                          std::size_t num_filtered_particles,
-                          cl::Event* evt) const
-  {
-    assert(input_quantities.size() == input_buffers.size());
-
-    for(std::size_t j = 0; j < input_quantities.size(); ++j)
-      _ctx->memcpy_h2d<result_scalar>(input_buffers[j], input_quantities[j].data(),
-                                      num_filtered_particles);
-
-    qcl::kernel_ptr kernel = quantity_to_reconstruct.get_kernel(_ctx);
-
-    qcl::kernel_argument_list arguments{kernel};
-    arguments.push(output_buffer);
-    arguments.push(static_cast<cl_uint>(num_filtered_particles));
-    for(std::size_t j = 0; j < input_buffers.size(); ++j)
-      arguments.push(input_buffers[j]);
+    qcl::kernel_argument_list args{_kernel};
+    args.push(static_cast<cl_int>(is_first_run));
+    args.push(_tiles->get_tiles_buffer());
+    args.push(cl_int3{{static_cast<cl_int>(num_tiles[0]),
+                       static_cast<cl_int>(num_tiles[1]),
+                       static_cast<cl_int>(num_tiles[2])}});
+    args.push(result_vector3{{static_cast<result_scalar>(tiles_min_corner[0]),
+                              static_cast<result_scalar>(tiles_min_corner[1]),
+                              static_cast<result_scalar>(tiles_min_corner[2])}});
+    args.push(result_vector3{{static_cast<result_scalar>(tile_sizes[0]),
+                              static_cast<result_scalar>(tile_sizes[1]),
+                              static_cast<result_scalar>(tile_sizes[2])}});
+    args.push(_tiles->get_sorted_particles_buffer());
+    args.push(static_cast<result_scalar>(_tiles->get_maximum_smoothing_length()));
+    args.push(static_cast<cl_int>(num_evaluation_points));
+    args.push(evaluation_points);
+    args.push(evaluation_points_weights);
+    args.push(evaluation_points_values);
 
 
-    cl_int err = _ctx->get_command_queue().enqueueNDRangeKernel(*kernel,
+    cl_int err = _ctx->get_command_queue().enqueueNDRangeKernel(*_kernel,
                                                    cl::NullRange,
-                                                   cl::NDRange(math::make_multiple_of(local_size1D,
-                                                                                      num_filtered_particles)),
-                                                   cl::NDRange(local_size1D),
-                                                   nullptr,
-                                                   evt);
-    qcl::check_cl_error(err, "Could not enqueue quantity transformation kernel");
-  }
+                                                   cl::NDRange{math::make_multiple_of(local_size1D, num_evaluation_points)},
+                                                   cl::NDRange{local_size1D},
+                                                   _tiles->get_data_transferred_events(),
+                                                   kernel_finished_event);
 
-  /// Prepares the tile data structure and sorts particles into their tiles
-  void sort_into_tiles(const std::vector<result_vector4>& filtered_particles,
-                     const std::vector<result_scalar>& smoothing_distances,
-                     std::size_t num_filtered_particles,
-                     const util::grid_coordinate_translator<3>& tile_grid,
-                     util::multi_array<result_vector4>& tiles_buffer,
-                     std::vector<result_vector4>& particles)
-  {
-
-    std::fill(tiles_buffer.begin(),
-              tiles_buffer.end(),
-              result_vector4{{0.0f, 0.0f, 0.0f, 0.0f}});
-
-    // Count the number of particles for each tile
-    for(std::size_t i = 0; i < num_filtered_particles; ++i)
-    {
-      result_vector4 particle = filtered_particles[i];
-
-      math::vector3 particle_coordinates;
-      for(std::size_t j = 0; j < 3; ++j)
-        particle_coordinates[j] = static_cast<math::scalar>(particle.s[j]);
-
-      auto grid_idx = tile_grid(particle_coordinates);
-      assert(tile_grid.is_within_bounds(grid_idx));
-
-      auto grid_uidx = tile_grid.unsigned_grid_index(grid_idx);
-      tiles_buffer[grid_uidx].s[0] += 1.0f;
-    }
-
-    // Set offsets for particles
-    for(std::size_t i = 0; i < tiles_buffer.get_num_elements(); ++i)
-    {
-      result_scalar previous_offset = 0.0;
-      result_scalar previous_num_particles = 0.0;
-      if(i > 0)
-      {
-        previous_offset        = tiles_buffer.data()[i-1].s[2];
-        previous_num_particles = tiles_buffer.data()[i-1].s[0];
-      }
-      tiles_buffer.data()[i].s[2] = previous_offset + previous_num_particles;
-    }
-
-    // Sort particles
-    for(std::size_t i = 0; i < num_filtered_particles; ++i)
-    {
-      result_vector4 particle = filtered_particles[i];
-
-      math::vector3 particle_coordinates;
-      for(std::size_t j = 0; j < 3; ++j)
-        particle_coordinates[j] = static_cast<math::scalar>(particle.s[j]);
-
-      auto grid_idx = tile_grid(particle_coordinates);
-
-      assert(tile_grid.is_within_bounds(grid_idx));
-
-      auto grid_uidx = tile_grid.unsigned_grid_index(grid_idx);
-
-      std::size_t already_placed_particles =
-          static_cast<std::size_t>(tiles_buffer[grid_uidx].s[1]);
-
-      std::size_t offset =
-          static_cast<std::size_t>(tiles_buffer[grid_uidx].s[2]);
-
-      particles[already_placed_particles + offset] = particle;
-
-      // Increase number of already placed particles
-      tiles_buffer[grid_uidx].s[1] += 1;
-      // Update maximum smoothing length of tile
-      if(tiles_buffer[grid_uidx].s[3] < smoothing_distances[i])
-        tiles_buffer[grid_uidx].s[3] = smoothing_distances[i];
-    }
+    qcl::check_cl_error(err, "Could not enqueue volumetric_nn8_reconstruction kernel");
 
 
   }
+
 
   qcl::device_context_ptr _ctx;
   volume_cutout _render_volume;
@@ -569,6 +415,12 @@ private:
   std::size_t _num_reconstructed_points;
   cl::Buffer  _reconstruction_result;
 
+  std::shared_ptr<particle_tiles> _tiles;
+  std::size_t _blocksize;
+
+  std::vector<particle> _filtered_particles;
+  std::vector<result_scalar> _filtered_smoothing_lengths;
+  std::vector<result_scalar> _transformed_quantity;
 };
 
 class volumetric_tree_reconstruction
@@ -669,6 +521,9 @@ public:
           // Make sure we actually have work to do...
           return;
 
+        cl_int err = evaluation_points_transferred.wait();
+        qcl::check_cl_error(err, "Error while waiting for the evaluation points to be transferred.");
+
         particles.clear();
         transformation.clear();
 
@@ -716,7 +571,7 @@ public:
         // Transform the quantities
         cl::Event transformation_complete;
         transformation(&transformation_complete);
-        cl_int err = transformation_complete.wait();
+        err = transformation_complete.wait();
         qcl::check_cl_error(err, "Error during the quantity transformation.");
 
         cl::Event transformation_results_transferred;

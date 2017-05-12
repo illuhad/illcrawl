@@ -103,9 +103,11 @@ public:
         math::make_multiple_of(_local_group_size, pixel_grid_translator.get_num_cells()[1])
         / _local_group_size;
 
-    util::grid_coordinate_translator<2> tiles_grid_translator{{{center[0], center[1]}},
-                                                              {{x_size, y_size}},
-                                                              {{num_tiles_x, num_tiles_y}}};
+    util::grid_coordinate_translator<2> tiles_grid_translator{
+      {{center[0], center[1]}},
+      {{x_size, y_size}},
+      util::grid_coordinate_translator<2>::grid_index{{num_tiles_x, num_tiles_y}}
+    };
 
     // Setup data streaming
     std::vector<H5::DataSet> input_data = {coordinates, volumes, smoothing_lengths};

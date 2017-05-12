@@ -152,15 +152,15 @@ typedef float8 nearest_neighbors_list;
 
 __constant uint16 insertion_shuffle_masks [] =
 {
-  (uint16)(0, 1, 2, 3, 4, 5, 6, 7, (uint8)(8)),
-  (uint16)(8, 1, 2, 3, 4, 5, 6, 7, (uint8)(8)),
-  (uint16)(1, 8, 2, 3, 4, 5, 6, 7, (uint8)(8)),
-  (uint16)(1, 2, 8, 3, 4, 5, 6, 7, (uint8)(8)),
-  (uint16)(1, 2, 3, 8, 4, 5, 6, 7, (uint8)(8)),
-  (uint16)(1, 2, 3, 4, 8, 5, 6, 7, (uint8)(8)),
-  (uint16)(1, 2, 3, 4, 5, 8, 6, 7, (uint8)(8)),
-  (uint16)(1, 2, 3, 4, 5, 6, 8, 7, (uint8)(8)),
-  (uint16)(1, 2, 3, 4, 5, 6, 7, 8, (uint8)(8))
+  (uint16)(8, 0, 1, 2, 3, 4, 5, 6, (uint8)(8)),
+  (uint16)(0, 8, 1, 2, 3, 4, 5, 6, (uint8)(8)),
+  (uint16)(0, 1, 8, 2, 3, 4, 5, 6, (uint8)(8)),
+  (uint16)(0, 1, 2, 8, 3, 4, 5, 6, (uint8)(8)),
+  (uint16)(0, 1, 2, 3, 8, 4, 5, 6, (uint8)(8)),
+  (uint16)(0, 1, 2, 3, 4, 8, 5, 6, (uint8)(8)),
+  (uint16)(0, 1, 2, 3, 4, 5, 8, 6, (uint8)(8)),
+  (uint16)(0, 1, 2, 3, 4, 5, 6, 8, (uint8)(8)),
+  (uint16)(0, 1, 2, 3, 4, 5, 6, 7, (uint8)(8))
 };
 
 void neighbor_list_insert(nearest_neighbors_list* list,
@@ -171,33 +171,32 @@ void neighbor_list_insert(nearest_neighbors_list* list,
   *list = shuffle2(*list, insertion_vector, insertion_shuffle_masks[insertion_pos]).lo;
 }
 
-void sorted_neighbors_insert(nearest_neighbors_list* weights,
+void sorted_neighbors_insert(nearest_neighbors_list* distances,
                              nearest_neighbors_list* values,
-                             scalar new_weight,
+                             scalar new_distance,
                              scalar new_value)
 {
   // Find position to insert before
   int insertion_pos = 0;
 
-  if(weights->s1 >= new_weight && new_weight > weights->s0)
+  if(distances->s1 >= new_distance && new_distance > distances->s0)
     insertion_pos = 1;
-  if(weights->s2 >= new_weight && new_weight > weights->s1)
+  if(distances->s2 >= new_distance && new_distance > distances->s1)
     insertion_pos = 2;
-  if(weights->s3 >= new_weight && new_weight > weights->s2)
+  if(distances->s3 >= new_distance && new_distance > distances->s2)
     insertion_pos = 3;
-  if(weights->s4 >= new_weight && new_weight > weights->s3)
+  if(distances->s4 >= new_distance && new_distance > distances->s3)
     insertion_pos = 4;
-  if(weights->s5 >= new_weight && new_weight > weights->s4)
+  if(distances->s5 >= new_distance && new_distance > distances->s4)
     insertion_pos = 5;
-  if(weights->s6 >= new_weight && new_weight > weights->s5)
+  if(distances->s6 >= new_distance && new_distance > distances->s5)
     insertion_pos = 6;
-  if(weights->s7 >= new_weight && new_weight > weights->s6)
+  if(distances->s7 >= new_distance && new_distance > distances->s6)
     insertion_pos = 7;
-  if(new_weight > weights->s7)
+  if(new_distance > distances->s7)
     insertion_pos = 8;
 
-
-  neighbor_list_insert(weights, new_weight, insertion_pos);
+  neighbor_list_insert(distances, new_distance, insertion_pos);
   neighbor_list_insert(values, new_value, insertion_pos);
 }
 
@@ -211,22 +210,32 @@ scalar nearest_neighbor_list_min(nearest_neighbors_list x)
   return x.s0;
 }
 
-int is_nearest_neighbor_list_nonzero(nearest_neighbors_list x)
+
+scalar get_weight3d(scalar distance)
 {
-  // Due to the sorting, it is enough to check x.s0
-  return x.s0 != 0.0f;
+  scalar dist2_inv = 1.f / (distance * distance);
+  scalar dist4_inv = dist2_inv * dist2_inv;
+  return dist4_inv * dist4_inv * dist2_inv;
 }
 
 
-scalar get_weight3d(vector3 a, vector3 b)
+int is_tile_id_component_valid(int id, int num_tiles)
 {
-  return 1.f / distance(a,b);
+  return id >= 0 && id < num_tiles;
 }
 
-scalar get_distance_from_weight3d(scalar weight)
+int tile_exists(int3 tile_id, int3 num_tiles)
 {
-  return 1.f / weight;
+  if(!is_tile_id_component_valid(tile_id.x, num_tiles.x))
+    return false;
+  if(!is_tile_id_component_valid(tile_id.y, num_tiles.y))
+    return false;
+  if(!is_tile_id_component_valid(tile_id.z, num_tiles.z))
+    return false;
+  return true;
 }
+
+#define MAX_CONTRIBUTION_DISTANCE MAXFLOAT
 
 __kernel void volumetric_reconstruction(
     int is_first_run,
@@ -241,54 +250,60 @@ __kernel void volumetric_reconstruction(
     int num_evaluation_points,
     __global vector4* evaluation_points_coordinates,
     __global nearest_neighbors_list* evaluation_points_weights,
-    __global nearest_neighbors_list* evaluation_points_values,
-
-    __global scalar* quantity)
+    __global nearest_neighbors_list* evaluation_points_values)
 {
   int gid = get_global_id(0);
 
   if (gid < num_evaluation_points)
   {
     vector3 evaluation_point_coord = evaluation_points_coordinates[gid].xyz;
-    nearest_neighbors_list weights;
+    nearest_neighbors_list distances;
     nearest_neighbors_list values;
     if (is_first_run)
     {
-      weights = (nearest_neighbors_list)(0, 0, 0, 0, 0, 0, 0, 0);
+      distances = (nearest_neighbors_list)(MAX_CONTRIBUTION_DISTANCE,
+                                           MAX_CONTRIBUTION_DISTANCE,
+                                           MAX_CONTRIBUTION_DISTANCE,
+                                           MAX_CONTRIBUTION_DISTANCE,
+                                           MAX_CONTRIBUTION_DISTANCE,
+                                           MAX_CONTRIBUTION_DISTANCE,
+                                           MAX_CONTRIBUTION_DISTANCE,
+                                           MAX_CONTRIBUTION_DISTANCE);
       values  = (nearest_neighbors_list)(0, 0, 0, 0, 0, 0, 0, 0);
     }
     else
     {
-      weights = evaluation_points_weights[gid];
+      distances = evaluation_points_weights[gid];
       values =  evaluation_points_values[gid];
     }
 
-    scalar maximum_weight = nearest_neighbor_list_max(weights);
 
     int3 evaluation_tile = get_tile_around_pos3(evaluation_point_coord,
                                                 tiles_min_corner, tile_sizes);
-    vector3 evaluation_tile_float = (vector3)((float)evaluation_tile.x,
-                                              (float)evaluation_tile.y,
-                                              (float)evaluation_tile.z);
 
     vector3 tile_center =
-        tiles_min_corner + (evaluation_tile_float + 0.5f) * tile_sizes;
+        tiles_min_corner + ((vector3)((float)evaluation_tile.x,
+                                      (float)evaluation_tile.y,
+                                      (float)evaluation_tile.z) + 0.5f) * tile_sizes;
 
     scalar tile_radius = 0.5f * sqrt(dot(tile_sizes, tile_sizes));
 
-    vector4 evaluation_tile_header =
+    vector4 evaluation_tile_header = (vector4)(0.0f,0.0f,0.0f,0.0f);
+    if(tile_exists(evaluation_tile, num_tiles))
+    {
+      evaluation_tile_header =
         tiles[evaluation_tile.z * num_tiles.x * num_tiles.y +
               evaluation_tile.y * num_tiles.x +
               evaluation_tile.x];
+    }
 
     // search radius is maximum smoothing length within tile by default
     scalar search_radius = evaluation_tile_header.w;
+
     if(search_radius == 0.0f)
       search_radius = maximum_smoothing_length;
 
-    if (is_nearest_neighbor_list_nonzero(weights))
-      search_radius =
-          get_distance_from_weight3d(nearest_neighbor_list_min(weights));
+    search_radius = fmin(search_radius, nearest_neighbor_list_max(distances));
 
     int3 min_tile =
         get_tile_around_pos3(tile_center - (search_radius + tile_radius),
@@ -305,7 +320,6 @@ __kernel void volumetric_reconstruction(
     max_tile.y = min((int)(num_tiles.y - 1), max_tile.y);
     max_tile.z = min((int)(num_tiles.z - 1), max_tile.z);
 
-
     int3 current_tile;
     for (current_tile.z = min_tile.z; current_tile.z <= max_tile.z;
          ++current_tile.z)
@@ -316,8 +330,6 @@ __kernel void volumetric_reconstruction(
         for (current_tile.x = min_tile.x; current_tile.x <= max_tile.x;
              ++current_tile.x)
         {
-          //if(gid==0)
-          //  printf("%f %f\n",search_radius,tile_radius);
           vector3 current_tile_float = (vector3)((float)current_tile.x,
                                                  (float)current_tile.y,
                                                  (float)current_tile.z);
@@ -335,6 +347,7 @@ __kernel void volumetric_reconstruction(
                       current_tile.x];
 
             int num_particles_in_tile = (int)tile_header.x;
+
             // scalar maximum_smoothing_distance_of_tile = tile_header.y;
             int particle_data_offset = (int)tile_header.z;
 
@@ -342,23 +355,21 @@ __kernel void volumetric_reconstruction(
             {
               vector4 current_particle = particles[particle_data_offset + i];
 
-              scalar new_weight =
-                  get_weight3d(current_particle.xyz, evaluation_point_coord);
+              scalar particle_distance =
+                  distance(current_particle.xyz, evaluation_point_coord);
 
-              if (new_weight > nearest_neighbor_list_min(weights))
+              if (particle_distance < nearest_neighbor_list_max(distances))
               {
-                scalar new_value = quantity[(int)current_particle.w];
 
-                sorted_neighbors_insert(&weights, &values, new_weight,
+                scalar new_value = current_particle.w;
+
+                sorted_neighbors_insert(&distances, &values, particle_distance,
                                         new_value);
 
                 // If we already have all slots for weights taken, we can
                 // assume as search radius the distance to the particle with
                 // the lowest contribution (i.e. the farthest particle)
-                if (is_nearest_neighbor_list_nonzero(weights))
-                  search_radius = fmin(search_radius,
-                                       get_distance_from_weight3d(
-                                          nearest_neighbor_list_min(weights)));
+                search_radius = fmin(search_radius, nearest_neighbor_list_max(distances));
               }
             }
           }
@@ -366,9 +377,10 @@ __kernel void volumetric_reconstruction(
       }
     }
 
-    evaluation_points_weights[gid] = weights;
+    evaluation_points_weights[gid] = distances;
     evaluation_points_values[gid] = values;
   }
+
 }
 
 __kernel void finalize_volumetric_reconstruction(int num_evaluation_points,
@@ -381,7 +393,17 @@ __kernel void finalize_volumetric_reconstruction(int num_evaluation_points,
   if(gid < num_evaluation_points)
   {
 
-    nearest_neighbors_list weights = evaluation_points_weights[gid];
+    nearest_neighbors_list distances = evaluation_points_weights[gid];
+    nearest_neighbors_list weights;
+    weights.s0 = get_weight3d(distances.s0);
+    weights.s1 = get_weight3d(distances.s1);
+    weights.s2 = get_weight3d(distances.s2);
+    weights.s3 = get_weight3d(distances.s3);
+    weights.s4 = get_weight3d(distances.s4);
+    weights.s5 = get_weight3d(distances.s5);
+    weights.s6 = get_weight3d(distances.s6);
+    weights.s7 = get_weight3d(distances.s7);
+
     nearest_neighbors_list values  = evaluation_points_values [gid];
 
     scalar weight_sum = 0.0f;
@@ -409,74 +431,6 @@ __kernel void finalize_volumetric_reconstruction(int num_evaluation_points,
     output[gid] = dot_product / weight_sum;
   }
 }
-
-
-
-/*
-__kernel void volumetric_integration(__global int* num_evaluation_points,
-                                     __global scalar* values,
-                                     __global scalar* dz,
-                                     __global scalar* pixels_out,
-                                     scalar dA,
-                                     int num_pixels_x,
-                                     int num_pixels_y)
-{
-  int gid_x = get_global_id(0);
-  int gid_y = get_global_id(1);
-
-  scalar result = 0.0f;
-}
-
-
-__kernel void reconstruction3D(__global nearest_neighbors_list* evaluation_points_weights,
-                               __global nearest_neighbors_list* evaluation_points_values,
-                               __global scalar*                 evaluation_points_dz,
-                               __global unsigned*               num_evaluation_points,
-                               __global int*                    evaluation_point_offsets,
-                               __global scalar* pixels_out,
-                               unsigned num_pixels_x,
-                               unsigned num_pixels_y,
-                               scalar dx,
-                               scalar dy)
-{
-  int gid_x = get_global_id(0);
-  int gid_y = get_global_id(1);
-
-  scalar result = 0.0f;
-  scalar dA = dx*dy;
-
-  if(gid_x < num_pixels_x && gid_y < num_pixels_y)
-  {
-    int pos = gid_y * num_pixels_x + gid_x;
-    unsigned num_evaluations = num_evaluation_points[pos];
-    int offset               = evaluation_point_offsets[pos];
-
-    for(int i = 0; i < num_evaluations; ++i)
-    {
-      nearest_neighbors_list weights = evaluation_points_weights[offset + i];
-      nearest_neighbors_list values  = evaluation_points_values [offset + i];
-      scalar dz                      = evaluation_points_dz     [offset + i];
-
-      scalar weight_sum = 0.0f;
-      weight_sum += weights.s0;
-      weight_sum += weights.s1;
-      weight_sum += weights.s2;
-      weight_sum += weights.s3;
-      weight_sum += weights.s4;
-      weight_sum += weights.s5;
-      weight_sum += weights.s6;
-      weight_sum += weights.s7;
-      if(weight_sum == 0.0f)
-        weight_sum = 1.0f;
-
-      result += dz * dot(weights, values) / weight_sum;
-    }
-
-    pixels_out[pos] = dA * result;
-  }
-
-}
-*/
 
 
 #endif
