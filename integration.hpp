@@ -87,7 +87,8 @@ public:
     if(estimate4 != estimate5)
     {
       T error = std::abs(estimate5 - estimate4);
-      s = std::pow(tolerance * _step_size / (2 * error), 1./4.);
+      T absolute_tolerance = _state / _current_position * tolerance;
+      s = std::pow(absolute_tolerance * _step_size / (2 * error), 1./4.);
     }
 
     Coordinate_type new_step_size = s * _step_size;

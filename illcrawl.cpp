@@ -278,14 +278,14 @@ int main(int argc, char** argv)
   illcrawl::volumetric_nn8_reconstruction reconstructor{
     ctx, total_render_volume, loader.get_coordinates(), loader.get_smoothing_length(), 7000000};
 
-  illcrawl::volumetric_slice<illcrawl::volumetric_nn8_reconstruction> slice{cam};
-  slice.create_slice(reconstructor, *xray_emission, result, 0);
+  //illcrawl::volumetric_slice<illcrawl::volumetric_nn8_reconstruction> slice{cam};
+  //slice.create_slice(reconstructor, *xray_emission, result, 0);
 
   //illcrawl::volumetric_tomography<illcrawl::volumetric_tree_reconstruction> tomography{cam};
   //tomography.create_tomographic_cube(reconstructor, *xray_emission, 1000.0, result);
 
-  //illcrawl::volumetric_integration<illcrawl::volumetric_nn8_reconstruction> integrator{cam};
-  //integrator.create_projection(reconstructor, *xray_emission, 1000.0, 100.0, result);
+  illcrawl::volumetric_integration<illcrawl::volumetric_nn8_reconstruction> integrator{cam};
+  integrator.create_projection(reconstructor, *xray_emission, 1000.0, 1.e-2, result);
 
   illcrawl::util::fits<result_scalar> result_file{"illcrawl_render.fits"};
   result_file.save(result);
