@@ -22,7 +22,7 @@ public:
   using particle = cl_float4;
   using scalar = cl_float;
 
-  static constexpr std::size_t target_num_particles_per_tile = 100;
+  static constexpr std::size_t target_num_particles_per_tile = 10;
 
   /// Data stored in the tiles:
   /// tile_descriptor.s[0] -- Number of particles in this tile
@@ -92,7 +92,6 @@ public:
       if(smoothing_length > _max_smoothing_length)
         _max_smoothing_length = smoothing_length;
     }
-    std::cout << "max smoothing = " << _max_smoothing_length << std::endl;
 
     math::scalar grid_volume = 1.0;
     for(std::size_t i = 0; i < 3; ++i)

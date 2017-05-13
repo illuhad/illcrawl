@@ -237,6 +237,50 @@ int tile_exists(int3 tile_id, int3 num_tiles)
 
 #define MAX_CONTRIBUTION_DISTANCE MAXFLOAT
 
+inline
+void evaluate_tile(int3 current_tile,
+                   __global vector4* tiles,
+                   int3 num_tiles,
+                   __global vector4* particles,
+                   vector3 evaluation_point_coord,
+                   nearest_neighbors_list* distances,
+                   nearest_neighbors_list* values,
+                   scalar* search_radius)
+{
+  vector4 tile_header =
+      tiles[current_tile.z * num_tiles.x * num_tiles.y +
+            current_tile.y * num_tiles.x +
+            current_tile.x];
+
+  int num_particles_in_tile = (int)tile_header.x;
+
+  // scalar maximum_smoothing_distance_of_tile = tile_header.y;
+  int particle_data_offset = (int)tile_header.z;
+
+  for (int i = 0; i < num_particles_in_tile; ++i)
+  {
+    vector4 current_particle = particles[particle_data_offset + i];
+
+    scalar particle_distance =
+        distance(current_particle.xyz, evaluation_point_coord);
+
+    if (particle_distance < nearest_neighbor_list_max(*distances))
+    {
+
+      scalar new_value = current_particle.w;
+
+      sorted_neighbors_insert(distances, values, particle_distance,
+                                new_value);
+
+      // If we already have all slots for weights taken, we can
+      // assume as search radius the distance to the particle with
+      // the lowest contribution (i.e. the farthest particle)
+      *search_radius = fmin(*search_radius, nearest_neighbor_list_max(*distances));
+
+    }
+  }
+}
+
 __kernel void volumetric_reconstruction(
     int is_first_run,
     __global vector4* tiles,
@@ -289,16 +333,26 @@ __kernel void volumetric_reconstruction(
     scalar tile_radius = 0.5f * sqrt(dot(tile_sizes, tile_sizes));
 
     vector4 evaluation_tile_header = (vector4)(0.0f,0.0f,0.0f,0.0f);
+
+    scalar search_radius = maximum_smoothing_length;
     if(tile_exists(evaluation_tile, num_tiles))
     {
       evaluation_tile_header =
         tiles[evaluation_tile.z * num_tiles.x * num_tiles.y +
               evaluation_tile.y * num_tiles.x +
               evaluation_tile.x];
-    }
 
-    // search radius is maximum smoothing length within tile by default
-    scalar search_radius = evaluation_tile_header.w;
+      search_radius = evaluation_tile_header.w;
+
+      // Preevaluate the tile around the evaluation position
+      // to keep the search radius small
+      evaluate_tile(evaluation_tile,
+                    tiles, num_tiles, particles,
+                    evaluation_point_coord,
+                    &distances, &values,
+                    &search_radius);
+
+    }
 
     if(search_radius == 0.0f)
       search_radius = maximum_smoothing_length;
@@ -330,6 +384,11 @@ __kernel void volumetric_reconstruction(
         for (current_tile.x = min_tile.x; current_tile.x <= max_tile.x;
              ++current_tile.x)
         {
+          if(current_tile.x == evaluation_tile.x &&
+             current_tile.y == evaluation_tile.y &&
+             current_tile.z == evaluation_tile.z)
+            continue;
+
           vector3 current_tile_float = (vector3)((float)current_tile.x,
                                                  (float)current_tile.y,
                                                  (float)current_tile.z);
@@ -341,37 +400,11 @@ __kernel void volumetric_reconstruction(
 
           if (distance23d(current_tile_center, evaluation_point_coord) < r * r)
           {
-            vector4 tile_header =
-                tiles[current_tile.z * num_tiles.x * num_tiles.y +
-                      current_tile.y * num_tiles.x +
-                      current_tile.x];
-
-            int num_particles_in_tile = (int)tile_header.x;
-
-            // scalar maximum_smoothing_distance_of_tile = tile_header.y;
-            int particle_data_offset = (int)tile_header.z;
-
-            for (int i = 0; i < num_particles_in_tile; ++i)
-            {
-              vector4 current_particle = particles[particle_data_offset + i];
-
-              scalar particle_distance =
-                  distance(current_particle.xyz, evaluation_point_coord);
-
-              if (particle_distance < nearest_neighbor_list_max(distances))
-              {
-
-                scalar new_value = current_particle.w;
-
-                sorted_neighbors_insert(&distances, &values, particle_distance,
-                                        new_value);
-
-                // If we already have all slots for weights taken, we can
-                // assume as search radius the distance to the particle with
-                // the lowest contribution (i.e. the farthest particle)
-                search_radius = fmin(search_radius, nearest_neighbor_list_max(distances));
-              }
-            }
+            evaluate_tile(current_tile,
+                          tiles, num_tiles, particles,
+                          evaluation_point_coord,
+                          &distances, &values,
+                          &search_radius);
           }
         }
       }
