@@ -85,12 +85,11 @@ public:
   using result_vector4 = cl_float4;
   using result_vector3 = cl_float3;
   using result_vector2 = cl_float2;
-  using particle = particle_tiles::particle;
+  using particle = particle_tile_grid::particle;
 
-  //const std::size_t desired_num_particles_per_tile = 100;
   const math::scalar smoothing_length_scale_factor = 0.5;
   const math::scalar additional_border_region_size = 100.0;
-  const std::size_t local_size1D = 256;
+  const std::size_t local_size1D = 64;
   const std::size_t local_size2D = 16;
 
   volumetric_nn8_reconstruction(const qcl::device_context_ptr& ctx,
@@ -102,8 +101,8 @@ public:
       _render_volume{render_volume},
       _coordinates{coordinates},
       _smoothing_lengths{smoothing_lengths},
-      _kernel{ctx->get_kernel("volumetric_reconstruction")},
-      _finalization_kernel{ctx->get_kernel("finalize_volumetric_reconstruction")},
+      _kernel{ctx->get_kernel("volumetric_nn8_reconstruction")},
+      _finalization_kernel{ctx->get_kernel("finalize_volumetric_nn8_reconstruction")},
       _num_reconstructed_points{0},
       _blocksize{blocksize},
       _transformed_quantity(blocksize)
@@ -270,7 +269,7 @@ public:
 
           // Release old memory first by setting _tiles to null
           _tiles = nullptr;
-          this->_tiles = std::make_shared<particle_tiles>(_ctx,
+          this->_tiles = std::make_shared<particle_tile_grid>(_ctx,
                                                           _filtered_particles,
                                                           _filtered_smoothing_lengths);
 
@@ -415,7 +414,7 @@ private:
   std::size_t _num_reconstructed_points;
   cl::Buffer  _reconstruction_result;
 
-  std::shared_ptr<particle_tiles> _tiles;
+  std::shared_ptr<particle_tile_grid> _tiles;
   std::size_t _blocksize;
 
   std::vector<particle> _filtered_particles;
@@ -941,10 +940,11 @@ public:
     : _cam{cam}
   {}
 
+  template<class Tolerance_type>
   void create_projection(Volumetric_reconstructor& reconstruction,
                          const reconstruction_quantity::quantity& reconstructed_quantity,
                          math::scalar z_range,
-                         math::scalar integration_tolerance,
+                         const Tolerance_type& integration_tolerance,
                          util::multi_array<result_scalar>& output)
   {
     output = util::multi_array<result_scalar>{_cam.get_num_pixels(0),

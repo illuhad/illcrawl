@@ -16,13 +16,13 @@ namespace illcrawl {
 
 /// Sorts a collection of particles into a grid and
 /// transfers the grid to the GPU
-class particle_tiles
+class particle_tile_grid
 {
 public:
   using particle = cl_float4;
   using scalar = cl_float;
 
-  static constexpr std::size_t target_num_particles_per_tile = 10;
+  static constexpr std::size_t target_num_particles_per_tile = 8;
 
   /// Data stored in the tiles:
   /// tile_descriptor.s[0] -- Number of particles in this tile
@@ -39,7 +39,7 @@ public:
   /// particle.s[1] -- y coordinate
   /// particle.s[2] -- z coordiante
   /// particle.s[3] -- quantity to reconstruct
-  particle_tiles(const qcl::device_context_ptr& ctx,
+  particle_tile_grid(const qcl::device_context_ptr& ctx,
                  const std::vector<particle>& particles,
                  const std::vector<scalar>& smoothing_lengths)
     : _ctx{ctx},

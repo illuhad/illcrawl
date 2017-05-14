@@ -171,9 +171,10 @@ int main(int argc, char** argv)
   }
 
   global_ctx->global_register_source_file("reconstruction.cl",
-                                          {"image_tile_based_reconstruction2D",
-                                           "volumetric_reconstruction",
-                                           "finalize_volumetric_reconstruction"});
+                                          {"image_tile_based_reconstruction2D"});
+  global_ctx->global_register_source_file("volumetric_nn8_reconstruction.cl",
+                                         {"volumetric_nn8_reconstruction",
+                                          "finalize_volumetric_nn8_reconstruction"});
   global_ctx->global_register_source_file("interpolation_tree.cl",
                                           {"tree_interpolation"});
 
@@ -284,8 +285,20 @@ int main(int argc, char** argv)
   //illcrawl::volumetric_tomography<illcrawl::volumetric_tree_reconstruction> tomography{cam};
   //tomography.create_tomographic_cube(reconstructor, *xray_emission, 1000.0, result);
 
+  illcrawl::integration::relative_tolerance<illcrawl::math::scalar> tol{1.e-4};
+
   illcrawl::volumetric_integration<illcrawl::volumetric_nn8_reconstruction> integrator{cam};
-  integrator.create_projection(reconstructor, *xray_emission, 1000.0, 1.e-2, result);
+  integrator.create_projection(reconstructor, *xray_emission, 1000.0,
+                               tol, result);
+  
+  /*render_result temperature_result;
+  illcrawl::volumetric_nn8_reconstruction reconstructor_b{
+    ctx, total_render_volume, loader.get_coordinates(), loader.get_smoothing_length(), 7000000};
+  integrator.create_projection(reconstructor_b, *luminosity_weighted_temperature, 1000.0,
+                               tol, temperature_result);
+  
+  for(std::size_t i = 0; i < temperature_result.get_num_elements(); ++i)
+    result.data()[i] = temperature_result.data()[i] / result.data()[i];*/
 
   illcrawl::util::fits<result_scalar> result_file{"illcrawl_render.fits"};
   result_file.save(result);

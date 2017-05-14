@@ -7,13 +7,48 @@
 namespace illcrawl {
 namespace integration {
 
+template<class T>
+class absolute_tolerance
+{
+public:
+  absolute_tolerance(const T& tol)
+    : _tol{tol}
+  {}
+
+  inline
+  T get_absolute_tolerance(const T& integration_state) const
+  {
+    return _tol;
+  }
+
+private:
+  T _tol;
+};
+
+template<class T>
+class relative_tolerance
+{
+public:
+  relative_tolerance(const T& tol)
+    : _tol{tol}
+  {}
+
+  inline
+  T get_absolute_tolerance(const T& integration_state) const
+  {
+    return _tol * integration_state;
+  }
+
+private:
+  T _tol;
+};
+
 /// Solves dy/dz = f(z)
-template<class T, class Coordinate_type>
+template<class T,
+         class Coordinate_type>
 class runge_kutta_fehlberg
 {
 public:
-
-
   runge_kutta_fehlberg(Coordinate_type initial_position = Coordinate_type{},
                        T initial_state = T{},
                        T first_evaluation = T{},
@@ -57,8 +92,9 @@ public:
     next_step_coordinates[3] = _current_position + 1./2. * _step_size;
   }
 
+  template<class Tolerance_type>
   void advance(const integrand_values& values,
-               T tolerance,
+               const Tolerance_type& tolerance,
                Coordinate_type integration_end)
   {
     T delta4 =
@@ -87,13 +123,19 @@ public:
     if(estimate4 != estimate5)
     {
       T error = std::abs(estimate5 - estimate4);
-      T absolute_tolerance = _state / _current_position * tolerance;
+      T absolute_tolerance = tolerance.get_absolute_tolerance(_state / _current_position);
       s = std::pow(absolute_tolerance * _step_size / (2 * error), 1./4.);
     }
 
     Coordinate_type new_step_size = s * _step_size;
 
-    if(s < 0.95 && new_step_size > minimum_stepsize)
+    if(new_step_size < minimum_stepsize)
+    {
+      new_step_size = minimum_stepsize;
+      s = new_step_size / _step_size;
+    }
+
+    if(s < 0.95)
     {
     // Reject approximation, go back to old position
       _current_position -= _step_size;
@@ -107,9 +149,6 @@ public:
 
     _step_size = new_step_size;
 
-    if(_step_size < minimum_stepsize)
-      _step_size = minimum_stepsize;
-
     if(_current_position + _step_size > integration_end)
       // The epsilon's job is to make sure that the condition
       // get_position() < integration range turns false and a integration loop
@@ -118,7 +157,7 @@ public:
   }
 
 private:
-  static constexpr Coordinate_type minimum_stepsize = 1.0;
+  static constexpr Coordinate_type minimum_stepsize = 0.2;
   static constexpr Coordinate_type epsilon = 0.01;
 
   T _state;
