@@ -2,7 +2,7 @@
  * This file is part of QCL, a small OpenCL interface which makes it quick and
  * easy to use OpenCL.
  * 
- * Copyright (C) 2016  Aksel Alpay
+ * Copyright (C) 2016,2017  Aksel Alpay
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by

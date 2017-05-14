@@ -1,7 +1,8 @@
 /*
- * This file is part of nanolens, a free program to calculate microlensing 
- * magnification patterns.
- * Copyright (C) 2015  Aksel Alpay
+ * This file is part of illcrawl, a reconstruction engine for data from
+ * the illustris simulation.
+ *
+ * Copyright (C) 2017  Aksel Alpay
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -16,6 +17,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+
 
 #ifndef MULTI_ARRAY_HPP
 #define MULTI_ARRAY_HPP
