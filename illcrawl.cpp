@@ -305,7 +305,7 @@ int main(int argc, char** argv)
   //illcrawl::volumetric_tomography<illcrawl::volumetric_tree_reconstruction> tomography{cam};
   //tomography.create_tomographic_cube(reconstructor, *xray_emission, 1000.0, result);
 
-  illcrawl::integration::relative_tolerance<illcrawl::math::scalar> tol{1.e-4};
+  illcrawl::integration::relative_tolerance<illcrawl::math::scalar> tol{1.e-3};
 
   illcrawl::volumetric_integration<illcrawl::volumetric_nn8_reconstruction> integrator{cam};
   integrator.create_projection(reconstructor, *xray_emission, 1000.0,

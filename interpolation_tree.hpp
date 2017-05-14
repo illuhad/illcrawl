@@ -309,7 +309,8 @@ private:
           total_mass += particle_mass;
           for(std::size_t j = 0; j < 3; ++j)
           {
-            assert(cell < _mean_coordinates.size() && child_id < _mean_coordinates.size());
+            assert(static_cast<std::size_t>(cell) < _mean_coordinates.size() &&
+                   static_cast<std::size_t>(child_id) < _mean_coordinates.size());
             _mean_coordinates[cell].s[j] += _mean_coordinates[child_id].s[j]
                                           * num_child_particles;
             // Center of mass for multipole
@@ -402,7 +403,8 @@ private:
 
   inline bool cell_exists(global_cell_id cell) const
   {
-    return cell >= 0 && cell < _particle_for_cell.size();
+    return cell >= 0 &&
+           cell < static_cast<global_cell_id>(_particle_for_cell.size());
   }
 
   inline

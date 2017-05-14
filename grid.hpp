@@ -66,7 +66,7 @@ public:
   inline bool is_within_bounds(const grid_index& idx) const
   {
     for(std::size_t i = 0; i < Dim; ++i)
-      if(idx[i] < 0 || idx[i] >= _num_cells[i])
+      if(idx[i] < 0 || static_cast<std::size_t>(idx[i]) >= _num_cells[i])
         return false;
     return true;
   }
@@ -96,7 +96,7 @@ public:
     {
       if(idx[i] < 0)
         idx[i] = 0;
-      else if(idx[i] >= _num_cells[i])
+      else if(static_cast<std::size_t>(idx[i]) >= _num_cells[i])
         idx[i] = _num_cells[i] - 1;
     }
   }

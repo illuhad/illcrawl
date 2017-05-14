@@ -254,7 +254,9 @@ public:
 
 
       // Sort into tiles - start by storing the number of particles per tile
-      for(std::size_t i = 0; i < num_tiles_x*num_tiles_y; ++i)
+      for(std::size_t i = 0;
+          i < static_cast<std::size_t>(num_tiles_x*num_tiles_y);
+          ++i)
       {
         // Set tile at x,y,0 to the header information, i.e. number of particles currently in the tile
         cl_tile_buffer[i].s[0] = 0; // Number of particles in tile
