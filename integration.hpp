@@ -25,6 +25,8 @@
 #include <array>
 #include <cmath>
 
+#include "qcl.hpp"
+
 namespace illcrawl {
 namespace integration {
 
@@ -158,14 +160,14 @@ public:
 
     if(s < 0.95)
     {
-    // Reject approximation, go back to old position
+      // Reject approximation, go back to old position
       _current_position -= _step_size;
     }
     else
     {
       // Accept approximation
       _state = estimate4;
-      _interval_start_evaluation = values[3];
+      _interval_start_evaluation = values[2];
     }
 
     _step_size = new_step_size;
@@ -189,6 +191,20 @@ private:
 };
 
 }
+
+class bulk_runge_kutta_fehlberg
+{
+public:
+  bulk_runge_kutta_fehlberg(const qcl::device_context_ptr& ctx)
+    : _ctx{ctx}
+  {}
+
+
+
+private:
+  qcl::device_context_ptr _ctx;
+};
+
 }
 
 #endif

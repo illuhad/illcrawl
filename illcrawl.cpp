@@ -28,6 +28,7 @@
 #include "qcl.hpp"
 #include "reconstruction.hpp"
 #include "volumetric_reconstruction.hpp"
+#include "environment.hpp"
 
 void usage()
 {
@@ -163,51 +164,22 @@ int main(int argc, char** argv)
   }
   std::string data_file = argv[1];
 
-  qcl::environment env;
 
-  const cl::Platform& plat =
-      env.get_platform_by_preference({"NVIDIA", "AMD", "Intel"});
-
-  qcl::global_context_ptr global_ctx =
-      env.create_global_context(plat, CL_DEVICE_TYPE_GPU);
-
-  if (global_ctx->get_num_devices() == 0)
+  illcrawl::environment env;
+  for (std::size_t i = 0;
+       i < env.get_compute_environment()->get_num_devices(); ++i)
   {
-    std::cout << "No OpenCL GPU devices found!" << std::endl;
-    return -1;
-  }
-  else
-  {
-    for (std::size_t i = 0; i < global_ctx->get_num_devices(); ++i)
-    {
-      std::cout << "Device " << i << ":" << std::endl;
-      std::cout << "   Name: " << global_ctx->device(i)->get_device_name()
-                << std::endl;
+    std::cout << "Device " << i << ":" << std::endl;
+    std::cout << "   Name: "
+              << env.get_compute_environment()->device(i)->get_device_name()
+              << std::endl;
 
-      std::string extensions;
-      global_ctx->device(i)->get_supported_extensions(extensions);
-      std::cout << "   Capabilities: " << extensions << std::endl;
-    }
+    std::string extensions;
+    env.get_compute_environment()->device(i)->get_supported_extensions(extensions);
+    std::cout << "   Capabilities: " << extensions << std::endl;
   }
 
-  global_ctx->global_register_source_file("reconstruction.cl",
-                                          {"image_tile_based_reconstruction2D"});
-  global_ctx->global_register_source_file("volumetric_nn8_reconstruction.cl",
-                                         {"volumetric_nn8_reconstruction",
-                                          "finalize_volumetric_nn8_reconstruction"});
-  global_ctx->global_register_source_file("interpolation_tree.cl",
-                                          {"tree_interpolation"});
-
-  global_ctx->global_register_source_file("quantities.cl",
-                                          // Kernels inside quantities.cl
-                                          {
-                                            "luminosity_weighted_temperature",
-                                            "xray_emission",
-                                            "identity",
-                                            "mean_temperature"
-                                          });
-
-  qcl::device_context_ptr ctx = global_ctx->device();
+  qcl::device_context_ptr ctx = env.get_compute_device();
 
   illcrawl::io::illustris_gas_data_loader loader{data_file};
 
@@ -302,10 +274,10 @@ int main(int argc, char** argv)
   //illcrawl::volumetric_slice<illcrawl::volumetric_nn8_reconstruction> slice{cam};
   //slice.create_slice(reconstructor, *xray_emission, result, 0);
 
-  //illcrawl::volumetric_tomography<illcrawl::volumetric_tree_reconstruction> tomography{cam};
+  //illcrawl::volumetric_tomography<illcrawl::volumetric_nn8_reconstruction> tomography{cam};
   //tomography.create_tomographic_cube(reconstructor, *xray_emission, 1000.0, result);
 
-  illcrawl::integration::relative_tolerance<illcrawl::math::scalar> tol{1.e-3};
+  illcrawl::integration::relative_tolerance<illcrawl::math::scalar> tol{1.e-2};
 
   illcrawl::volumetric_integration<illcrawl::volumetric_nn8_reconstruction> integrator{cam};
   integrator.create_projection(reconstructor, *xray_emission, 1000.0,
