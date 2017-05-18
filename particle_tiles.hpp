@@ -40,8 +40,7 @@ namespace illcrawl {
 class particle_tile_grid
 {
 public:
-  using particle = cl_float4;
-  using scalar = cl_float;
+  using particle = device_vector4;
 
   static constexpr std::size_t target_num_particles_per_tile = 8;
 
@@ -62,7 +61,7 @@ public:
   /// particle.s[3] -- quantity to reconstruct
   particle_tile_grid(const qcl::device_context_ptr& ctx,
                  const std::vector<particle>& particles,
-                 const std::vector<scalar>& smoothing_lengths)
+                 const std::vector<device_scalar>& smoothing_lengths)
     : _ctx{ctx},
       _max_smoothing_length{0.0f},
       _sorted_particles(particles.size()),
@@ -108,7 +107,7 @@ public:
         }
       }
 
-      scalar smoothing_length =  smoothing_lengths[i];
+      device_scalar smoothing_length =  smoothing_lengths[i];
 
       if(smoothing_length > _max_smoothing_length)
         _max_smoothing_length = smoothing_length;
@@ -209,7 +208,7 @@ public:
     return _tiles_grid.get_cell_sizes();
   }
 
-  scalar get_maximum_smoothing_length() const
+  device_scalar get_maximum_smoothing_length() const
   {
     return _max_smoothing_length;
   }
@@ -242,8 +241,8 @@ private:
     // Set offsets for particles
     for(std::size_t i = 0; i < _tiles.get_num_elements(); ++i)
     {
-      scalar previous_offset = 0.0;
-      scalar previous_num_particles = 0.0;
+      device_scalar previous_offset = 0.0;
+      device_scalar previous_num_particles = 0.0;
       if(i > 0)
       {
         previous_offset        = _tiles.data()[i-1].s[2];
@@ -254,7 +253,7 @@ private:
   }
 
   void sort_into_tiles(const std::vector<particle>& particles,
-                       const std::vector<scalar>& smoothing_lengths)
+                       const std::vector<device_scalar>& smoothing_lengths)
   {
     // Sort particles
     for(std::size_t i = 0; i < particles.size(); ++i)
@@ -292,7 +291,7 @@ private:
 
   qcl::device_context_ptr _ctx;
 
-  scalar _max_smoothing_length;
+  device_scalar _max_smoothing_length;
 
   util::grid_coordinate_translator<3> _tiles_grid;
   util::multi_array<tile_descriptor> _tiles;

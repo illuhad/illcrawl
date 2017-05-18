@@ -36,6 +36,7 @@
 #include "coordinate_system.hpp"
 #include "interpolation_tree.hpp"
 #include "particle_tiles.hpp"
+#include "camera.hpp"
 
 #include "integration.hpp"
 
@@ -101,11 +102,8 @@ struct volume_cutout
 class volumetric_nn8_reconstruction
 {
 public:
-  using result_scalar = float;
-  using nearest_neighbor_list = cl_float8;
-  using result_vector4 = cl_float4;
-  using result_vector3 = cl_float3;
-  using result_vector2 = cl_float2;
+
+  using nearest_neighbor_list = device_vector8;
   using particle = particle_tile_grid::particle;
 
   const math::scalar smoothing_length_scale_factor = 0.5;
@@ -134,8 +132,10 @@ public:
   /// Execute the reconstruction
   /// \param evaluation_points The points at which the data shall be
   /// interpolated
+  /// \param num_evaluation_points The number of evaluation points
   /// \param quantity_to_reconstruct The quantity that shall be estimated
-  void run(const std::vector<result_vector4>& evaluation_points,
+  void run(const cl::Buffer& evaluation_point_coordinate_buffer,
+           std::size_t num_evaluation_points,
            const reconstruction_quantity::quantity& quantity_to_reconstruct)
   {
     std::vector<H5::DataSet> streamed_quantities{
@@ -148,30 +148,23 @@ public:
 
     std::size_t num_input_quantities =
         quantity_to_reconstruct.get_required_datasets().size();
-    std::vector<result_scalar> input_quantities(num_input_quantities);
+    std::vector<device_scalar> input_quantities(num_input_quantities);
 
     io::async_dataset_streamer<math::scalar> streamer{streamed_quantities};
 
-    cl::Buffer evaluation_point_coordinate_buffer;
+
     cl::Buffer evaluation_point_weights_buffer;
     cl::Buffer evaluation_point_values_buffer;
 
 
-    _ctx->create_input_buffer<result_vector4>(evaluation_point_coordinate_buffer, evaluation_points.size());
     _ctx->create_buffer<nearest_neighbor_list>(evaluation_point_weights_buffer,
                                                CL_MEM_READ_WRITE,
-                                               evaluation_points.size());
+                                               num_evaluation_points);
     _ctx->create_buffer<nearest_neighbor_list>(evaluation_point_values_buffer,
                                                CL_MEM_READ_WRITE,
-                                               evaluation_points.size());
+                                               num_evaluation_points);
 
     // Copy evaluation points to the GPU
-    cl::Event evaluation_points_transferred;
-    _ctx->memcpy_h2d_async(evaluation_point_coordinate_buffer,
-                           evaluation_points.data(),
-                           evaluation_points.size(),
-                           &evaluation_points_transferred);
-
     bool is_first_block = true;
 
     cl::Event kernel_finished;
@@ -180,11 +173,8 @@ public:
        (streamer.get_num_rows() <= _blocksize))
     {
       // Reuse existing particles and tiles
-      cl_int err = evaluation_points_transferred.wait();
-      qcl::check_cl_error(err, "Error while waiting for the transfer "
-                               "of the evaluation points to complete.");
 
-      this->launch_reconstruction(evaluation_points.size(),
+      this->launch_reconstruction(num_evaluation_points,
                                   is_first_block,
                                   evaluation_point_coordinate_buffer,
                                   evaluation_point_values_buffer,
@@ -220,7 +210,7 @@ public:
           for(std::size_t j = 0; j < 3; ++j)
             // The static_cast ensures that the rounding errors
             // remain consistent
-            coordinate[j] = static_cast<result_scalar>(access(current_block, i, j));
+            coordinate[j] = static_cast<device_scalar>(access(current_block, i, j));
 
           coordinate_system::correct_periodicity(_render_volume.get_bounding_box_min_corner(),
                                                  _render_volume.get_bounding_box_max_corner(),
@@ -240,15 +230,15 @@ public:
             {
               access.select_dataset(2 + quantity_index);
               input_quantities[quantity_index] =
-                  static_cast<result_scalar>(access(current_block, i));
+                  static_cast<device_scalar>(access(current_block, i));
             }
 
             particle new_particle;
             for(std::size_t j = 0; j < 3; ++j)
-              new_particle.s[j] = static_cast<result_scalar>(coordinate[j]);
+              new_particle.s[j] = static_cast<device_scalar>(coordinate[j]);
 
             _filtered_particles.push_back(new_particle);
-            _filtered_smoothing_lengths.push_back(static_cast<result_scalar>(smoothing_length));
+            _filtered_smoothing_lengths.push_back(static_cast<device_scalar>(smoothing_length));
 
             transformation.queue_input_quantities(input_quantities);
           }
@@ -302,14 +292,8 @@ public:
             qcl::check_cl_error(err, "Error while waiting for the volumetric_nn8_reconstruction"
                                    " kernel to finish.");
           }
-          else
-          {
-            // and wait for the transfer of the evaluation points to complete, if we are in the first run
-            err = evaluation_points_transferred.wait();
-            qcl::check_cl_error(err, "Error while waiting for the transfer "
-                                     "of the evaluation points to complete.");
-          }
-          this->launch_reconstruction(evaluation_points.size(),
+
+          this->launch_reconstruction(num_evaluation_points,
                                       is_first_block,
                                       evaluation_point_coordinate_buffer,
                                       evaluation_point_values_buffer,
@@ -331,8 +315,8 @@ public:
       }
 
     }
-    _num_reconstructed_points = evaluation_points.size();
-    _ctx->create_buffer<result_scalar>(_reconstruction_result,
+    _num_reconstructed_points = num_evaluation_points;
+    _ctx->create_buffer<device_scalar>(_reconstruction_result,
                                        CL_MEM_READ_WRITE,
                                        _num_reconstructed_points);
 
@@ -346,7 +330,7 @@ public:
     err =_ctx->get_command_queue().enqueueNDRangeKernel(*_finalization_kernel,
                                                    cl::NullRange,
                                                    cl::NDRange(math::make_multiple_of(local_size1D,
-                                                                                      evaluation_points.size())),
+                                                                                      num_evaluation_points)),
                                                    cl::NDRange(local_size1D),
                                                    nullptr,
                                                    &finalization_done);
@@ -354,6 +338,21 @@ public:
 
     err = finalization_done.wait();
     qcl::check_cl_error(err, "Error while waiting for finalization kernel to finish.");
+  }
+
+
+  void run(const std::vector<device_vector4>& evaluation_points,
+           const reconstruction_quantity::quantity& quantity_to_reconstruct)
+  {
+    cl::Buffer evaluation_point_coordinate_buffer;
+
+    _ctx->create_input_buffer<device_vector4>(evaluation_point_coordinate_buffer, evaluation_points.size());
+
+    _ctx->memcpy_h2d(evaluation_point_coordinate_buffer,
+                    evaluation_points.data(),
+                    evaluation_points.size());
+
+    run(evaluation_point_coordinate_buffer, evaluation_points.size(), quantity_to_reconstruct);
   }
 
   /// \return The number of reconstructed data points
@@ -396,14 +395,14 @@ private:
     args.push(cl_int3{{static_cast<cl_int>(num_tiles[0]),
                        static_cast<cl_int>(num_tiles[1]),
                        static_cast<cl_int>(num_tiles[2])}});
-    args.push(result_vector3{{static_cast<result_scalar>(tiles_min_corner[0]),
-                              static_cast<result_scalar>(tiles_min_corner[1]),
-                              static_cast<result_scalar>(tiles_min_corner[2])}});
-    args.push(result_vector3{{static_cast<result_scalar>(tile_sizes[0]),
-                              static_cast<result_scalar>(tile_sizes[1]),
-                              static_cast<result_scalar>(tile_sizes[2])}});
+    args.push(device_vector3{{static_cast<device_scalar>(tiles_min_corner[0]),
+                              static_cast<device_scalar>(tiles_min_corner[1]),
+                              static_cast<device_scalar>(tiles_min_corner[2])}});
+    args.push(device_vector3{{static_cast<device_scalar>(tile_sizes[0]),
+                              static_cast<device_scalar>(tile_sizes[1]),
+                              static_cast<device_scalar>(tile_sizes[2])}});
     args.push(_tiles->get_sorted_particles_buffer());
-    args.push(static_cast<result_scalar>(_tiles->get_maximum_smoothing_length()));
+    args.push(static_cast<device_scalar>(_tiles->get_maximum_smoothing_length()));
     args.push(static_cast<cl_int>(num_evaluation_points));
     args.push(evaluation_points);
     args.push(evaluation_points_weights);
@@ -439,8 +438,8 @@ private:
   std::size_t _blocksize;
 
   std::vector<particle> _filtered_particles;
-  std::vector<result_scalar> _filtered_smoothing_lengths;
-  std::vector<result_scalar> _transformed_quantity;
+  std::vector<device_scalar> _filtered_smoothing_lengths;
+  std::vector<device_scalar> _transformed_quantity;
 };
 
 class volumetric_tree_reconstruction
@@ -462,17 +461,17 @@ public:
 
   }
 
-  using result_scalar = float;
-  using nearest_neighbor_list = cl_float8;
-  using result_vector4 = cl_float4;
-  using result_vector3 = cl_float3;
-  using result_vector2 = cl_float2;
-  using particle = cl_float4;
+
+  using nearest_neighbor_list = device_vector8;
+  using particle = device_vector4;
 
 
-  void run(const std::vector<result_vector4>& evaluation_points,
+  void run(const cl::Buffer& evaluation_points_buffer,
+           std::size_t num_evaluation_points,
            const reconstruction_quantity::quantity& q)
   {
+    _evaluation_points_buffer = evaluation_points_buffer;
+
     std::vector<H5::DataSet> streamed_data = {{_coordinates}};
     auto required_datasets = q.get_required_datasets();
     for(const H5::DataSet& data : required_datasets)
@@ -480,29 +479,22 @@ public:
 
     io::async_dataset_streamer<math::scalar> streamer{streamed_data};
 
-    _ctx->create_input_buffer<result_vector4>(_evaluation_points_buffer, evaluation_points.size());
-    _ctx->create_buffer<result_scalar>(_reconstruction_result,
+    _ctx->create_buffer<device_scalar>(_reconstruction_result,
                                        CL_MEM_READ_WRITE,
-                                       evaluation_points.size());
-    _ctx->create_buffer<result_scalar>(_reconstruction_value_sum_state_buffer,
+                                       num_evaluation_points);
+    _ctx->create_buffer<device_scalar>(_reconstruction_value_sum_state_buffer,
                                        CL_MEM_READ_WRITE,
-                                       evaluation_points.size());
-    _ctx->create_buffer<result_scalar>(_reconstruction_weight_sum_state_buffer,
+                                       num_evaluation_points);
+    _ctx->create_buffer<device_scalar>(_reconstruction_weight_sum_state_buffer,
                                        CL_MEM_READ_WRITE,
-                                       evaluation_points.size());
+                                       num_evaluation_points);
 
-    cl::Event evaluation_points_transferred;
-    _ctx->memcpy_h2d_async(_evaluation_points_buffer,
-                           evaluation_points.data(),
-                           evaluation_points.size(),
-                           &evaluation_points_transferred);
+
 
     if((_tree != nullptr) &&
        (streamer.get_num_rows() <= _blocksize))
     {
       // We can just reuse the existing tree - no need for data streaming
-      cl_int err = evaluation_points_transferred.wait();
-      qcl::check_cl_error(err, "Error while waiting for the evaluation points to be transferred.");
 
       cl::Event evaluation_complete;
       // Purge any previous results, so that our results are unaffected
@@ -512,13 +504,13 @@ public:
                            _reconstruction_value_sum_state_buffer,
                            _reconstruction_weight_sum_state_buffer,
                            _reconstruction_result,
-                           evaluation_points.size(),
-                           static_cast<result_scalar>(_opening_angle),
+                           num_evaluation_points,
+                           static_cast<device_scalar>(_opening_angle),
                            &evaluation_complete);
 
-      err = evaluation_complete.wait();
+      cl_int err = evaluation_complete.wait();
       qcl::check_cl_error(err, "Error while executing tree interpolation kernel");
-      this->_num_reconstructed_points = evaluation_points.size();
+      this->_num_reconstructed_points = num_evaluation_points;
     }
     else
     {
@@ -528,8 +520,8 @@ public:
       std::vector<particle> particles;
 
       particles.reserve(_blocksize);
-      std::vector<result_scalar> quantities_of_particle(transformation.get_num_quantities());
-      std::vector<result_scalar> transformed_quantities;
+      std::vector<device_scalar> quantities_of_particle(transformation.get_num_quantities());
+      std::vector<device_scalar> transformed_quantities;
 
       io::buffer_accessor<math::scalar> access = streamer.create_buffer_accessor();
       io::async_for_each_block(streamer.begin_row_blocks(this->_blocksize),
@@ -540,9 +532,6 @@ public:
         if(current_block.get_num_available_rows() == 0)
           // Make sure we actually have work to do...
           return;
-
-        cl_int err = evaluation_points_transferred.wait();
-        qcl::check_cl_error(err, "Error while waiting for the evaluation points to be transferred.");
 
         particles.clear();
         transformation.clear();
@@ -566,7 +555,7 @@ public:
             // Build prelimary particle
             particle p;
             for(std::size_t j = 0; j < 3; ++j)
-              p.s[j] = static_cast<result_scalar>(particle_position[j]);
+              p.s[j] = static_cast<device_scalar>(particle_position[j]);
 
             particles.push_back(p);
 
@@ -574,7 +563,7 @@ public:
             {
               access.select_dataset(1 + j);
               quantities_of_particle[j] =
-                  static_cast<result_scalar>(access(current_block, i));
+                  static_cast<device_scalar>(access(current_block, i));
             }
 
             transformation.queue_input_quantities(quantities_of_particle);
@@ -591,7 +580,7 @@ public:
         // Transform the quantities
         cl::Event transformation_complete;
         transformation(&transformation_complete);
-        err = transformation_complete.wait();
+        cl_int err = transformation_complete.wait();
         qcl::check_cl_error(err, "Error during the quantity transformation.");
 
         cl::Event transformation_results_transferred;
@@ -608,18 +597,14 @@ public:
         // Create tree
         _tree = std::make_shared<sparse_interpolation_tree>(particles, _ctx);
 
-
-        err = evaluation_points_transferred.wait();
-        qcl::check_cl_error(err, "Error while waiting for the evaluation points to be transferred.");
-
         cl::Event evaluation_complete;
 
         _tree->evaluate_tree(_evaluation_points_buffer,
                              _reconstruction_value_sum_state_buffer,
                              _reconstruction_weight_sum_state_buffer,
                              _reconstruction_result,
-                             evaluation_points.size(),
-                             static_cast<result_scalar>(_opening_angle),
+                             num_evaluation_points,
+                             static_cast<device_scalar>(_opening_angle),
                              &evaluation_complete,
                              true);
 
@@ -627,8 +612,20 @@ public:
         qcl::check_cl_error(err, "Error while executing tree interpolation kernel");
 
       });
-      this->_num_reconstructed_points = evaluation_points.size();
+      this->_num_reconstructed_points = num_evaluation_points;
     }
+  }
+
+  void run(const std::vector<device_vector4>& evaluation_points,
+           const reconstruction_quantity::quantity& q)
+  {
+
+    _ctx->create_input_buffer<device_vector4>(_evaluation_points_buffer, evaluation_points.size());
+
+    _ctx->memcpy_h2d(_evaluation_points_buffer,
+                     evaluation_points.data(),
+                     evaluation_points.size());
+    run(_evaluation_points_buffer, evaluation_points.size(), q);
   }
 
   /// \return The number of reconstructed data points
@@ -677,106 +674,6 @@ private:
   math::scalar _opening_angle;
 };
 
-class camera
-{
-public:
-  camera(const math::vector3& position,
-         const math::vector3& look_at,
-         math::scalar roll_angle,
-         math::scalar screen_width,
-         std::size_t num_pix_x,
-         std::size_t num_pix_y)
-    : _position{position},
-      _look_at{look_at},
-      _pixel_size{screen_width/static_cast<math::scalar>(num_pix_x)},
-      _num_pixels{{num_pix_x, num_pix_y}}
-  {
-    // Calculate screen basis vectors
-    math::vector3 v1 {{0, 0, 1}};
-
-    if (_look_at[0] == v1[0] &&
-        _look_at[1] == v1[1] &&
-        _look_at[2] == v1[2])
-    {
-      v1 = {{0, 1, 0}};
-    }
-
-    v1 = math::cross(v1, _look_at);
-    math::vector3 v2 = math::cross(_look_at, v1);
-
-    math::matrix3x3 roll_matrix;
-    math::matrix_create_rotation_matrix(&roll_matrix, _look_at, roll_angle);
-
-    // Normalize vectors in case of rounding errors
-    this->_screen_basis_vector0 =
-        math::normalize(math::matrix_vector_mult(roll_matrix, v1));
-
-    this->_screen_basis_vector1 =
-        math::normalize(math::matrix_vector_mult(roll_matrix, v2));
-
-    update_min_position();
-  }
-
-  std::size_t get_num_pixels(std::size_t dim) const
-  {
-    return _num_pixels[dim];
-  }
-
-  math::vector3 get_pixel_coordinate(std::size_t x_index, std::size_t y_index) const
-  {
-    return _min_position
-         + x_index * _pixel_size * _screen_basis_vector0
-         + y_index * _pixel_size * _screen_basis_vector1;
-  }
-
-  math::vector3 get_pixel_coordinate(math::scalar x_index, math::scalar y_index) const
-  {
-    return _min_position
-         + x_index * _pixel_size * _screen_basis_vector0
-         + y_index * _pixel_size * _screen_basis_vector1;
-  }
-
-  math::scalar get_pixel_size() const
-  {
-    return _pixel_size;
-  }
-
-  const math::vector3& get_position() const
-  {
-    return _position;
-  }
-
-  const math::vector3& get_look_at() const
-  {
-    return _look_at;
-  }
-
-  void set_position(const math::vector3& pos)
-  {
-    this->_position = pos;
-    update_min_position();
-  }
-
-private:
-  void update_min_position()
-  {
-    _min_position = _position;
-    _min_position -= (_num_pixels[0]/2.0) * _pixel_size * _screen_basis_vector0;
-    _min_position -= (_num_pixels[1]/2.0) * _pixel_size * _screen_basis_vector1;
-  }
-
-  math::vector3 _position;
-  math::vector3 _look_at;
-
-  math::vector3 _screen_basis_vector0;
-  math::vector3 _screen_basis_vector1;
-
-  math::scalar _pixel_size;
-
-  std::array<std::size_t, 2> _num_pixels;
-
-  math::vector3 _min_position;
-};
 
 
 
@@ -784,8 +681,6 @@ template<class Volumetric_reconstructor>
 class volumetric_slice
 {
 public:
-  using result_scalar = volumetric_nn8_reconstruction::result_scalar;
-  using result_vector4 = volumetric_nn8_reconstruction::result_vector4;
 
   volumetric_slice(const camera& cam)
     : _cam{cam}
@@ -794,11 +689,11 @@ public:
 
   void create_slice(Volumetric_reconstructor& reconstruction,
            const reconstruction_quantity::quantity& reconstructed_quantity,
-           util::multi_array<result_scalar>& output,
+           util::multi_array<device_scalar>& output,
            std::size_t num_additional_samples = 0) const
   {
 
-    output = util::multi_array<result_scalar>{_cam.get_num_pixels(0),
+    output = util::multi_array<device_scalar>{_cam.get_num_pixels(0),
                                               _cam.get_num_pixels(1)};
     std::fill(output.begin(), output.end(), 0.0f);
 
@@ -811,7 +706,7 @@ public:
 
     std::size_t samples_per_pixel = num_additional_samples + 1;
 
-    std::vector<result_vector4> evaluation_points(samples_per_pixel * total_num_pixels);
+    std::vector<device_vector4> evaluation_points(samples_per_pixel * total_num_pixels);
 
     for(std::size_t i = 0; i < samples_per_pixel; ++i)
     {
@@ -841,7 +736,7 @@ public:
     reconstruction.run(evaluation_points, reconstructed_quantity);
 
     // Retrieve results
-    std::vector<result_scalar> result_buffer(samples_per_pixel * total_num_pixels);
+    std::vector<device_scalar> result_buffer(samples_per_pixel * total_num_pixels);
     reconstruction.get_context()->memcpy_d2h(result_buffer.data(),
                                              reconstruction.get_reconstruction(),
                                              samples_per_pixel * total_num_pixels);
@@ -880,11 +775,11 @@ public:
   }
 
 private:
-  result_vector4 vector3_to_cl_vector4(const math::vector3& x) const
+  device_vector4 vector3_to_cl_vector4(const math::vector3& x) const
   {
-    result_vector4 result;
+    device_vector4 result;
     for(std::size_t i = 0; i < 3; ++i)
-      result.s[i] = static_cast<result_scalar>(x[i]);
+      result.s[i] = static_cast<device_scalar>(x[i]);
     return result;
   }
 
@@ -895,7 +790,6 @@ template<class Volumetric_reconstructor>
 class volumetric_tomography
 {
 public:
-  using result_scalar = volumetric_nn8_reconstruction::result_scalar;
 
   volumetric_tomography(const camera& cam)
     : _cam{cam}
@@ -904,13 +798,13 @@ public:
   void create_tomographic_cube(Volumetric_reconstructor& reconstruction,
                                const reconstruction_quantity::quantity& reconstructed_quantity,
                                math::scalar z_range,
-                               util::multi_array<result_scalar>& output)
+                               util::multi_array<device_scalar>& output)
   {
     std::size_t num_pixels_z = static_cast<std::size_t>(z_range / _cam.get_pixel_size());
     if(num_pixels_z == 0)
       num_pixels_z = 1;
 
-    output = util::multi_array<result_scalar>{_cam.get_num_pixels(0),
+    output = util::multi_array<device_scalar>{_cam.get_num_pixels(0),
                                               _cam.get_num_pixels(1),
                                               num_pixels_z};
 
@@ -925,7 +819,7 @@ public:
       moving_cam.set_position(_cam.get_position()
                               + z * _cam.get_pixel_size() * moving_cam.get_look_at());
 
-      util::multi_array<result_scalar> slice_data;
+      util::multi_array<device_scalar> slice_data;
       volumetric_slice<Volumetric_reconstructor> slice{moving_cam};
       slice.create_slice(reconstruction, reconstructed_quantity, slice_data);
 
@@ -953,22 +847,62 @@ template<class Volumetric_reconstructor>
 class volumetric_integration
 {
 public:
-  using result_scalar = typename Volumetric_reconstructor::result_scalar;
-  using result_vector4 = typename Volumetric_reconstructor::result_vector4;
-  using integrator = integration::runge_kutta_fehlberg<result_scalar, math::scalar>;
 
-  volumetric_integration(const camera& cam)
-    : _cam{cam}
+  using integrator = integration::runge_kutta_fehlberg<device_scalar, math::scalar>;
+
+  volumetric_integration(const qcl::device_context_ptr& ctx,
+                         const camera& cam)
+    : _cam{cam}, _ctx{ctx}
   {}
+
+  template<class Tolerance_type>
+  void parallel_create_projection(Volumetric_reconstructor& reconstruction,
+                                  const reconstruction_quantity::quantity& reconstructed_quantity,
+                                  math::scalar z_range,
+                                  const Tolerance_type& integration_tolerance,
+                                  util::multi_array<device_scalar>& output) const
+  {
+    output = util::multi_array<device_scalar>{_cam.get_num_pixels(0),
+                                              _cam.get_num_pixels(1)};
+
+    std::size_t total_num_pixels = _cam.get_num_pixels(0)
+                                 * _cam.get_num_pixels(1);
+
+    std::fill(output.begin(), output.end(), 0.0f);
+
+    integration::parallel_runge_kutta_fehlberg integration_engine{
+      _ctx,
+      total_num_pixels
+    };
+
+    integration::parallel_pixel_integrand<Volumetric_reconstructor> integrand{
+      _ctx,
+      _cam,
+      &reconstruction,
+      &reconstructed_quantity
+    };
+
+    while(integration_engine.get_num_running_integrators() > 0)
+    {
+      std::cout << integration_engine.get_num_running_integrators()
+                << " integrators are still running.\n";
+      integration_engine.advance(integration_tolerance, z_range, integrand);
+    }
+
+    // Retrieve results
+    _ctx->memcpy_d2h(output.data(),
+                     integration_engine.get_integration_state(),
+                     total_num_pixels);
+  }
 
   template<class Tolerance_type>
   void create_projection(Volumetric_reconstructor& reconstruction,
                          const reconstruction_quantity::quantity& reconstructed_quantity,
                          math::scalar z_range,
                          const Tolerance_type& integration_tolerance,
-                         util::multi_array<result_scalar>& output)
+                         util::multi_array<device_scalar>& output) const
   {
-    output = util::multi_array<result_scalar>{_cam.get_num_pixels(0),
+    output = util::multi_array<device_scalar>{_cam.get_num_pixels(0),
                                               _cam.get_num_pixels(1)};
 
     std::fill(output.begin(), output.end(), 0.0f);
@@ -978,10 +912,10 @@ public:
     std::vector<integrator> integrators(total_num_pixels);
     std::vector<std::size_t> integrator_ids(total_num_pixels);
 
-    std::vector<result_scalar> integrand_values(
+    std::vector<device_scalar> integrand_values(
           integrator::required_num_evaluations * total_num_pixels);
 
-    std::vector<result_vector4> evaluation_points;
+    std::vector<device_vector4> evaluation_points;
     evaluation_points.reserve(integrator::required_num_evaluations * total_num_pixels);
 
 
@@ -1008,9 +942,9 @@ public:
             {
               math::vector3 coord = pixel_coord;
               coord += _cam.get_look_at() * required_evaluations[i];
-              result_vector4 evaluation_point;
+              device_vector4 evaluation_point;
               for(std::size_t j = 0; j < 3; ++j)
-                evaluation_point.s[j] = static_cast<result_scalar>(coord[j]);
+                evaluation_point.s[j] = static_cast<device_scalar>(coord[j]);
 
               evaluation_points.push_back(evaluation_point);
             }
@@ -1059,6 +993,7 @@ private:
   //static constexpr math::scalar range_epsilon = 0.1;
 
   camera _cam;
+  qcl::device_context_ptr _ctx;
 };
 
 }

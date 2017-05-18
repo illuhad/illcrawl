@@ -29,8 +29,12 @@ endif()
 find_package(OpenCL REQUIRED)
 find_package(HDF5 REQUIRED COMPONENTS CXX)
 find_package(Threads REQUIRED)
+find_package(Boost
+  1.61      # Minimum or EXACT version e.g. 1.36.0
+  REQUIRED             # Fail with error if Boost is not found
+  )
 
-include_directories(${PROJECT_BINARY_DIR} ${OpenCL_INCLUDE_DIRS} ${HDF5_INCLUDE_DIRS})
+include_directories(${PROJECT_BINARY_DIR} ${OpenCL_INCLUDE_DIRS} ${HDF5_INCLUDE_DIRS} ${BOOST_INCLUDE_DIR})
 
 	
 add_executable(illcrawl illcrawl.cpp)

@@ -32,10 +32,6 @@
 namespace illcrawl {
 namespace reconstruction_quantity {
 
-
-
-
-
 class quantity
 {
 public:
@@ -194,7 +190,6 @@ public:
 class quantity_transformation
 {
 public:
-  using result_scalar = cl_float;
 
   quantity_transformation(const qcl::device_context_ptr& ctx,
                           const quantity& q,
@@ -206,11 +201,11 @@ public:
     _transfers_complete_events.resize(q.get_required_datasets().size());
 
     for(std::size_t i = 0; i < _input_quantities.size(); ++i)
-      _input_quantities[i] = std::vector<result_scalar>(blocksize);
+      _input_quantities[i] = std::vector<device_scalar>(blocksize);
 
     for(std::size_t i = 0; i < _input_quantities.size(); ++i)
-      _ctx->create_input_buffer<result_scalar>(_input_buffers[i], blocksize);
-    _ctx->create_buffer<result_scalar>(_result, CL_MEM_READ_WRITE, blocksize);
+      _ctx->create_input_buffer<device_scalar>(_input_buffers[i], blocksize);
+    _ctx->create_buffer<device_scalar>(_result, CL_MEM_READ_WRITE, blocksize);
 
     _scaling_factors = _quantity.get_quantitiy_scaling_factors();
   }
@@ -224,7 +219,7 @@ public:
   }
 
   void retrieve_results(cl::Event* evt,
-                        std::vector<result_scalar>& out) const
+                        std::vector<device_scalar>& out) const
   {
     out.resize(get_num_elements());
     _ctx->memcpy_d2h_async(out.data(),
@@ -239,24 +234,24 @@ public:
   }
 
   template<std::size_t N>
-  void queue_input_quantities(const std::array<result_scalar, N>& input_elements)
+  void queue_input_quantities(const std::array<device_scalar, N>& input_elements)
   {
     assert(N == _input_quantities.size());
     queue_input_quantities(input_elements.data());
   }
 
-  void queue_input_quantities(const std::vector<result_scalar>& input_elements)
+  void queue_input_quantities(const std::vector<device_scalar>& input_elements)
   {
     assert(input_elements.size() == _input_quantities.size());
     queue_input_quantities(input_elements.data());
   }
 
-  void queue_input_quantities(const result_scalar* input_elements)
+  void queue_input_quantities(const device_scalar* input_elements)
   {
     assert(_num_elements + 1 <= _blocksize);
     for(std::size_t i = 0; i < _input_quantities.size(); ++i)
       _input_quantities[i][_num_elements] =
-          static_cast<result_scalar>(_scaling_factors[i] * input_elements[i]);
+          static_cast<device_scalar>(_scaling_factors[i] * input_elements[i]);
 
     ++_num_elements;
   }
@@ -306,7 +301,7 @@ private:
   const quantity& _quantity;
   std::size_t _blocksize;
 
-  std::vector<std::vector<result_scalar>> _input_quantities;
+  std::vector<std::vector<device_scalar>> _input_quantities;
   std::vector<cl::Buffer> _input_buffers;
 
   std::size_t _num_elements;

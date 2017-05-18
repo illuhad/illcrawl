@@ -44,10 +44,6 @@ namespace illcrawl {
 class smoothed_quantity_reconstruction2D
 {
 public:
-  using result_scalar = float;
-  using result_vector4 = cl_float4;
-  using result_vector3 = cl_float3;
-  using result_vector2 = cl_float2;
 
   const std::size_t blocksize = 1000000;
 
@@ -75,7 +71,7 @@ public:
                               math::scalar y_size,
                               std::size_t num_pix_x,
                               const math::vector3& periodic_wraparound_size,
-                              util::multi_array<result_scalar>& out)
+                              util::multi_array<device_scalar>& out)
   {
     this->run(quantity_to_reconstruct.get_required_datasets(),
                                  quantity_to_reconstruct.get_quantitiy_scaling_factors(),
@@ -98,7 +94,7 @@ public:
            math::scalar x_size, math::scalar y_size, std::size_t num_pix_x,
            const math::vector3& periodic_wraparound_size,
            const qcl::kernel_ptr& quantity_transformation_kernel,
-           util::multi_array<result_scalar>& out)
+           util::multi_array<device_scalar>& out)
   {
     assert(reconstruction_quantities.size() != 0);
     assert(quantities_scaling.size() == reconstruction_quantities.size());
@@ -110,11 +106,11 @@ public:
 
     auto grid_min_coordinates = pixel_grid_translator.get_grid_min_corner();
     auto grid_max_coordinates = pixel_grid_translator.get_grid_max_corner();
-    result_vector2 cl_grid_min_corner, cl_grid_max_corner;
+    device_vector2 cl_grid_min_corner, cl_grid_max_corner;
     for(std::size_t i = 0; i < 2; ++i)
     {
-      cl_grid_min_corner.s[i] = static_cast<result_scalar>(grid_min_coordinates[i]);
-      cl_grid_max_corner.s[i] = static_cast<result_scalar>(grid_max_coordinates[i]);
+      cl_grid_min_corner.s[i] = static_cast<device_scalar>(grid_min_coordinates[i]);
+      cl_grid_max_corner.s[i] = static_cast<device_scalar>(grid_max_coordinates[i]);
     }
 
     long long num_tiles_x =
@@ -139,37 +135,37 @@ public:
 
     // Setup the OpenCL (input data) buffers
     // First, the host side buffers
-    std::vector<std::vector<result_scalar>> cl_quantities(reconstruction_quantities.size());
+    std::vector<std::vector<device_scalar>> cl_quantities(reconstruction_quantities.size());
     for(std::size_t i = 0; i < cl_quantities.size(); ++i)
       cl_quantities[i].resize(blocksize);
 
-    std::vector<result_vector4> cl_tile_buffer(num_tiles_x * num_tiles_y);
-    std::vector<result_vector4> cl_particles(blocksize);
+    std::vector<device_vector4> cl_tile_buffer(num_tiles_x * num_tiles_y);
+    std::vector<device_vector4> cl_particles(blocksize);
 
     // Then the device side
     std::vector<cl::Buffer> quantities_buffer(reconstruction_quantities.size());
     cl::Buffer transformed_quantity_buffer;
 
     cl::Buffer tiles_buffer;
-    _ctx->create_input_buffer<result_vector4>(tiles_buffer, num_tiles_x*num_tiles_y);
+    _ctx->create_input_buffer<device_vector4>(tiles_buffer, num_tiles_x*num_tiles_y);
     cl::Buffer particles_buffer;
-    _ctx->create_input_buffer<result_vector4>(particles_buffer, blocksize);
+    _ctx->create_input_buffer<device_vector4>(particles_buffer, blocksize);
 
     for(std::size_t i = 0; i < quantities_buffer.size(); ++i)
-      _ctx->create_input_buffer<result_scalar>(quantities_buffer[i], blocksize);
+      _ctx->create_input_buffer<device_scalar>(quantities_buffer[i], blocksize);
 
-    _ctx->create_buffer<result_scalar>(transformed_quantity_buffer,
+    _ctx->create_buffer<device_scalar>(transformed_quantity_buffer,
                                        CL_MEM_READ_WRITE,
                                        blocksize);
 
 
     // Setup output
-    out = util::multi_array<result_scalar>{pixel_grid_translator.get_num_cells()[0],
+    out = util::multi_array<device_scalar>{pixel_grid_translator.get_num_cells()[0],
                                            pixel_grid_translator.get_num_cells()[1]};
     std::fill(out.begin(), out.end(), 0.0);
 
     cl::Buffer output_buffer;
-    _ctx->create_buffer<result_scalar>(output_buffer,
+    _ctx->create_buffer<device_scalar>(output_buffer,
                                        CL_MEM_READ_WRITE,
                                        out.get_extent_of_dimension(0) * out.get_extent_of_dimension(1),
                                               out.data());
@@ -177,7 +173,7 @@ public:
 
     // Buffer to count the number of particles in each tile
     std::vector<cl_uint> num_particles_in_tile(num_tiles_x * num_tiles_y, 0);
-    std::vector<result_vector4> particles;
+    std::vector<device_vector4> particles;
     particles.reserve(blocksize);
 
     io::buffer_accessor<math::scalar> access = streamer.create_buffer_accessor();
@@ -225,17 +221,17 @@ public:
           access.select_dataset(3 + j);
           math::scalar q = access(current_block, i);
 
-          cl_quantities[j][i] = static_cast<result_scalar>(quantities_scaling[j] * q);
+          cl_quantities[j][i] = static_cast<device_scalar>(quantities_scaling[j] * q);
         }
 
         // Apply coordinate transformations
         particle_position = _coordinate_transformation(particle_position);
 
-        result_vector4 particle;
+        device_vector4 particle;
         for(std::size_t j = 0; j < 2; ++j)
-          particle.s[j] = static_cast<result_scalar>(particle_position[j]);
-        particle.s[2] = static_cast<result_scalar>(smoothing_length);
-        particle.s[3] = static_cast<result_scalar>(i);
+          particle.s[j] = static_cast<device_scalar>(particle_position[j]);
+        particle.s[2] = static_cast<device_scalar>(smoothing_length);
+        particle.s[3] = static_cast<device_scalar>(i);
 
         // Filter particles
         if(grid_min_coordinates[0] <= (particle.s[0] + _additional_border_region_size) &&
@@ -269,20 +265,20 @@ public:
       // Now store the particles themselves
       for(std::size_t i = 0; i < particles.size(); ++i)
       {
-        result_vector4 particle = particles[i];
+        device_vector4 particle = particles[i];
         // Find tile
         auto tile = tiles_grid_translator({{particle.s[0], particle.s[1]}});
         tiles_grid_translator.clamp_grid_index_to_edge(tile);
 
         // Make sure the headers are continous in memory
         std::size_t header_position = tile[1]*num_tiles_x + tile[0];
-        result_vector4 header = cl_tile_buffer[header_position];
+        device_vector4 header = cl_tile_buffer[header_position];
 
         std::size_t num_particles_already_in_tile =
             static_cast<std::size_t>(header.s[0]);
 
         // Store maximum smoothing length of tile
-        result_scalar smoothing_length = particle.s[2];
+        device_scalar smoothing_length = particle.s[2];
         if(smoothing_length > header.s[1])
           cl_tile_buffer[header_position].s[1] = smoothing_length;
 
@@ -298,13 +294,13 @@ public:
 
       // Copy tiles and particles
       cl::Event tiles_copied_event;
-      _ctx->memcpy_h2d_async<result_vector4>(tiles_buffer,
+      _ctx->memcpy_h2d_async<device_vector4>(tiles_buffer,
                                              cl_tile_buffer.data(),
                                              num_tiles_x*num_tiles_y,
                                              &tiles_copied_event,
                                              nullptr,1);
       cl::Event particles_copied_event;
-      _ctx->memcpy_h2d_async<result_vector4>(particles_buffer,
+      _ctx->memcpy_h2d_async<device_vector4>(particles_buffer,
                                              cl_particles.data(),
                                              cl_particles.size(),
                                              &particles_copied_event,

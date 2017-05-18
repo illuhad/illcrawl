@@ -23,6 +23,8 @@
 
 #define CL_HPP_TARGET_OPENCL_VERSION 120
 #define CL_HPP_MINIMUM_OPENCL_VERSION 120
+#define WITH_BOOST_COMPUTE_COMPAT
+
 #include <CL/cl2.hpp>
 #ifndef WITHOUT_GL_INTEROP
 #ifdef WIN32
@@ -44,6 +46,10 @@
 #include <stdexcept>
 #include <map>
 #include <cassert>
+
+#ifdef WITH_BOOST_COMPUTE_COMPAT
+#include <boost/compute.hpp>
+#endif
 
 #include "qcl_module.hpp"
 
@@ -95,6 +101,19 @@ using kernel_ptr = std::shared_ptr<cl::Kernel>;
 using buffer_ptr = std::shared_ptr<cl::Buffer>;
 
 using command_queue_id = std::size_t;
+
+#ifdef WITH_BOOST_COMPUTE_COMPAT
+template<class T>
+boost::compute::buffer_iterator<T> create_buffer_iterator(const cl::Buffer& buffer,
+                                                          std::size_t position)
+{
+  return boost::compute::buffer_iterator<T>{
+    boost::compute::buffer{buffer.get()},
+    position
+  };
+}
+
+#endif
 
 /// This class simplifies passing arguments to kernels
 /// by counting the argument index automatically.
@@ -204,6 +223,14 @@ public:
   {
     return _context;
   }
+
+#ifdef WITH_BOOST_COMPUTE_COMPAT
+  /// \return A boost::compute context based on this context
+  boost::compute::context get_boost_compute_context() const
+  {
+    return boost::compute::context{_context.get()};
+  }
+#endif
   
   /// \return The underlying OpenCL command queue
   /// \param queue The id of the command queue. The id must be greater or

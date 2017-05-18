@@ -44,8 +44,7 @@ public:
   };
 
   using particle_counter = cl_uint;
-  using scalar = cl_float;
-  using coordinate = cl_float4;
+  using coordinate = device_vector4;
 
   using global_cell_id = cl_int;
   using subcell_id = cl_int;
@@ -60,8 +59,8 @@ public:
     std::cout << "Starting tree construction" << std::endl;
     _kernel = _ctx->get_kernel("tree_interpolation");
 
-    std::array<scalar,3> min_coordinates = {{-1.f, -1.f, -1.f}};
-    std::array<scalar,3> max_coordinates = {{ 1.f,  1.f,  1.f}};
+    std::array<device_scalar,3> min_coordinates = {{-1.f, -1.f, -1.f}};
+    std::array<device_scalar,3> max_coordinates = {{ 1.f,  1.f,  1.f}};
 
     if(particles.size() > 0)
     {
@@ -153,7 +152,7 @@ public:
                      const cl::Buffer& weight_sum_state,
                      const cl::Buffer& out,
                      std::size_t num_points,
-                     scalar opening_angle,
+                     device_scalar opening_angle,
                      cl::Event* evt,
                      bool retain_results = false) const
   {
@@ -187,9 +186,9 @@ public:
   }
 
   void evaluate_single_point(const math::vector3& position,
-                               scalar opening_angle,
-                               scalar& value_sum,
-                               scalar& weight_sum) const
+                               device_scalar opening_angle,
+                               device_scalar& value_sum,
+                               device_scalar& weight_sum) const
   {
     math::vector3 root_center = {{_center.s[0],_center.s[1],_center.s[2]}};
     evaluate_single_point(position,
@@ -202,8 +201,8 @@ private:
 
   inline bool can_node_be_approximated(const math::vector3& evaluation_point,
                                        const math::vector3& cell_coordinate,
-                                       scalar cell_diameter,
-                                       scalar opening_angle) const
+                                       device_scalar cell_diameter,
+                                       device_scalar opening_angle) const
   {
     math::vector3 R = evaluation_point - cell_coordinate;
 
@@ -214,9 +213,9 @@ private:
                              global_cell_id cell,
                              const math::vector3& cell_coordinate,
                              math::scalar cell_diameter,
-                             scalar opening_angle,
-                             scalar& value_sum,
-                             scalar& weight_sum) const
+                             device_scalar opening_angle,
+                             device_scalar& value_sum,
+                             device_scalar& weight_sum) const
   {
     particle p = _particle_for_cell[cell];
     for(int i = 0; i < 3; ++i)
@@ -290,7 +289,7 @@ private:
       _num_particles[cell] = 0;
       _mean_coordinates[cell] = coordinate{{0.0f, 0.0f, 0.0f}};
       _particle_for_cell[cell] = particle{{0.0f, 0.0f, 0.0f, 0.0f}};
-      scalar total_mass = 0.0f;
+      device_scalar total_mass = 0.0f;
 
       for(std::size_t i = 0; i < 8; ++i)
       {
@@ -304,7 +303,7 @@ private:
           particle_counter num_child_particles =  _num_particles[child_id];
           _num_particles[cell] += num_child_particles;
           particle child_particle = _particle_for_cell[child_id];
-          scalar particle_mass = child_particle.s[3];
+          device_scalar particle_mass = child_particle.s[3];
 
           total_mass += particle_mass;
           for(std::size_t j = 0; j < 3; ++j)
@@ -321,7 +320,7 @@ private:
 
       for(std::size_t i = 0; i < 3; ++i)
       {
-        _mean_coordinates[cell].s[i] /= static_cast<scalar>(_num_particles[cell]);
+        _mean_coordinates[cell].s[i] /= static_cast<device_scalar>(_num_particles[cell]);
         _particle_for_cell[cell].s[i] /= total_mass;
       }
       _particle_for_cell[cell].s[3] = total_mass;
@@ -439,7 +438,7 @@ private:
 
   inline
   math::vector3 get_subcell_center(const math::vector3& parent_center,
-                                   const scalar parent_diameter,
+                                   const device_scalar parent_diameter,
                                    subcell_id subcell) const
   {
     static std::array<std::array<int, 3>, 8> directional_sign =
@@ -454,7 +453,7 @@ private:
        {{ 1,  1,  1}}
     }};
 
-    scalar step = 0.25 * parent_diameter;
+    device_scalar step = 0.25 * parent_diameter;
 
     math::vector3 result = parent_center;
     for(std::size_t i = 0; i < 3; ++i)
@@ -482,7 +481,7 @@ private:
   qcl::device_context_ptr _ctx;
 
   coordinate _center;
-  scalar _root_diameter;
+  device_scalar _root_diameter;
   std::vector<particle> _particle_for_cell;
 
   std::vector<children_list> _subcells;

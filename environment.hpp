@@ -44,8 +44,8 @@ public:
     _global_ctx->global_register_source_file("reconstruction.cl",
                                             {"image_tile_based_reconstruction2D"});
     _global_ctx->global_register_source_file("volumetric_nn8_reconstruction.cl",
-                                           {"volumetric_nn8_reconstruction",
-                                            "finalize_volumetric_nn8_reconstruction"});
+                                            {"volumetric_nn8_reconstruction",
+                                             "finalize_volumetric_nn8_reconstruction"});
     _global_ctx->global_register_source_file("interpolation_tree.cl",
                                             {"tree_interpolation"});
 
@@ -56,6 +56,12 @@ public:
                                               "xray_emission",
                                               "identity",
                                               "mean_temperature"
+                                            });
+    _global_ctx->global_register_source_file("integration.cl",
+                                            {
+                                               "runge_kutta_fehlberg",
+                                               "construct_evaluation_points_over_camera_plane",
+                                               "gather_integrand_evaluations"
                                             });
     _ctx = _global_ctx->device();
   }

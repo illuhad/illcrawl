@@ -35,8 +35,8 @@ void usage()
   std::cout << "Usage: illcrawl <Path to HDF5 file>" << std::endl;
 }
 
-using result_scalar = illcrawl::smoothed_quantity_reconstruction2D::result_scalar;
-using render_result = illcrawl::util::multi_array<result_scalar>;
+using illcrawl::device_scalar;
+using render_result = illcrawl::util::multi_array<device_scalar>;
 
 void render_view3d(const illcrawl::math::vector3& center,
                    const illcrawl::io::illustris_gas_data_loader& loader,
@@ -45,8 +45,8 @@ void render_view3d(const illcrawl::math::vector3& center,
 
   std::size_t resolution = 2048;
   std::size_t num_frames = 400;
-  illcrawl::util::multi_array<result_scalar> result_data_cube{resolution, resolution, num_frames};
-  illcrawl::util::multi_array<result_scalar> result;
+  illcrawl::util::multi_array<device_scalar> result_data_cube{resolution, resolution, num_frames};
+  illcrawl::util::multi_array<device_scalar> result;
 
   illcrawl::math::vector3 rotation_axis = {{0, 1, 0}};
 
@@ -86,7 +86,7 @@ void render_view3d(const illcrawl::math::vector3& center,
         result_data_cube[idx3] = result[idx2];
       }
   }
-  illcrawl::util::fits<result_scalar> result_file{"illcrawl_3d_render.fits"};
+  illcrawl::util::fits<device_scalar> result_file{"illcrawl_3d_render.fits"};
   result_file.save(result_data_cube);
 }
 
@@ -94,7 +94,7 @@ void render_quantity(const illcrawl::math::vector3& center,
                    const illcrawl::io::illustris_gas_data_loader& loader,
                    illcrawl::smoothed_quantity_reconstruction2D& reconstruction,
                    const illcrawl::reconstruction_quantity::quantity& rendered_quantity,
-                   illcrawl::util::multi_array<result_scalar>& result)
+                   illcrawl::util::multi_array<device_scalar>& result)
 {
 
   reconstruction.run(
@@ -110,10 +110,10 @@ void render_quantity(const illcrawl::math::vector3& center,
                    const illcrawl::reconstruction_quantity::quantity& rendered_quantity,
                    const std::string& filename = "illcrawl_render.fits")
 {
-  illcrawl::util::multi_array<result_scalar> result;
+  illcrawl::util::multi_array<device_scalar> result;
   render_quantity(center, loader, reconstruction, rendered_quantity, result);
 
-  illcrawl::util::fits<result_scalar> result_file{filename};
+  illcrawl::util::fits<device_scalar> result_file{filename};
   result_file.save(result);
 }
 
@@ -121,14 +121,14 @@ void render_luminosity_weighted_temperature(
                    const illcrawl::math::vector3& center,
                    const illcrawl::io::illustris_gas_data_loader& loader,
                    illcrawl::smoothed_quantity_reconstruction2D& reconstruction,
-                   const illcrawl::util::multi_array<result_scalar>& xray_emission,
+                   const illcrawl::util::multi_array<device_scalar>& xray_emission,
                    const std::string& filename = "illcrawl_render.fits")
 {
   auto luminosity_weighted_temperature = std::make_shared<
       illcrawl::reconstruction_quantity::luminosity_weighted_temperature>(&loader);
 
 
-  illcrawl::util::multi_array<result_scalar> result;
+  illcrawl::util::multi_array<device_scalar> result;
   render_quantity(center,
                   loader,
                   reconstruction,
@@ -148,7 +148,7 @@ void render_luminosity_weighted_temperature(
       result[idx] /= xray_emission[idx];
     }
 
-  illcrawl::util::fits<result_scalar> result_file{filename};
+  illcrawl::util::fits<device_scalar> result_file{filename};
   result_file.save(result);
 
 }
@@ -277,10 +277,10 @@ int main(int argc, char** argv)
   //illcrawl::volumetric_tomography<illcrawl::volumetric_nn8_reconstruction> tomography{cam};
   //tomography.create_tomographic_cube(reconstructor, *xray_emission, 1000.0, result);
 
-  illcrawl::integration::relative_tolerance<illcrawl::math::scalar> tol{1.e-2};
+  illcrawl::integration::absolute_tolerance<illcrawl::math::scalar> tol{100.0};
 
-  illcrawl::volumetric_integration<illcrawl::volumetric_nn8_reconstruction> integrator{cam};
-  integrator.create_projection(reconstructor, *xray_emission, 1000.0,
+  illcrawl::volumetric_integration<illcrawl::volumetric_nn8_reconstruction> integrator{ctx, cam};
+  integrator.parallel_create_projection(reconstructor, *xray_emission, 1000.0,
                                tol, result);
   
   /*render_result temperature_result;
@@ -292,7 +292,7 @@ int main(int argc, char** argv)
   for(std::size_t i = 0; i < temperature_result.get_num_elements(); ++i)
     result.data()[i] = temperature_result.data()[i] / result.data()[i];*/
 
-  illcrawl::util::fits<result_scalar> result_file{"illcrawl_render.fits"};
+  illcrawl::util::fits<device_scalar> result_file{"illcrawl_render.fits"};
   result_file.save(result);
 
   return 0;
