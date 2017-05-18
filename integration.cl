@@ -76,7 +76,7 @@ void rkf_advance(scalar* integration_state,
     scalar absolute_tolerance = tolerance;
 
     if(is_relative_tolerance)
-      absolute_tolerance = *integration_state / old_position * tolerance;
+      absolute_tolerance = *integration_state / (*current_position) * tolerance;
 
     s = pow(absolute_tolerance * (*current_step_size) / (2.f * error), 0.25f);
   }
@@ -136,8 +136,6 @@ __kernel void runge_kutta_fehlberg(__global scalar* integration_state,
                                    __global int* is_integrator_still_running)
 {
   int gid = get_global_id(0);
-
-
 
   if(gid < num_integrators)
   {

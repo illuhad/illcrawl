@@ -98,14 +98,13 @@ template<class T,
 class runge_kutta_fehlberg
 {
 public:
-  runge_kutta_fehlberg(Coordinate_type initial_position = Coordinate_type{},
-                       T initial_state = T{},
+  runge_kutta_fehlberg(T initial_state = T{},
                        T first_evaluation = T{},
                        Coordinate_type initial_step_size = 1.0)
     : _state{initial_state},
       _interval_start_evaluation{first_evaluation},
       _step_size{initial_step_size},
-      _current_position{initial_position}
+      _current_position{Coordinate_type{}}
   {}
 
   using evaluation_coordinates = std::array<Coordinate_type, 4>;
@@ -349,7 +348,6 @@ public:
 
   parallel_runge_kutta_fehlberg(const qcl::device_context_ptr& ctx,
                             std::size_t num_integrators,
-                            math::scalar initial_position = 0.0,
                             math::scalar initial_stepsize = 1.0,
                             math::scalar initial_integrand_evaluation = 0.0)
     : _ctx{ctx},
@@ -360,6 +358,8 @@ public:
   {
     assert(ctx != nullptr);
     assert(num_integrators > 0);
+
+    math::scalar initial_position = 0.0;
 
     _ctx->create_buffer<device_scalar>(_integration_state_buffer,
                                        CL_MEM_READ_WRITE, num_integrators);
