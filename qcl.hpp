@@ -26,6 +26,13 @@
 #define WITH_BOOST_COMPUTE_COMPAT
 
 #include <CL/cl2.hpp>
+
+// Disable OpenCL<->OpenGL interoperability by default
+#ifndef WITH_GL_INTEROP
+#define WITHOUT_GL_INTEROP
+#endif
+
+
 #ifndef WITHOUT_GL_INTEROP
 #ifdef WIN32
 // What is the correct header?

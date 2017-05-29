@@ -3,7 +3,7 @@ set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Wall -Wextra -Wno-ignored-a
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -g -ffast-math -march=native -Wall -Wno-ignored-attributes -Wextra -Wno-unused-parameter")
 
 
-cmake_minimum_required (VERSION 2.6)
+cmake_minimum_required (VERSION 3.1)
 project (illcrawl)
 
 if(NOT CMAKE_BUILD_TYPE)
