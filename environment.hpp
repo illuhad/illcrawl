@@ -55,7 +55,8 @@ public:
                                               "luminosity_weighted_temperature",
                                               "xray_emission",
                                               "identity",
-                                              "mean_temperature"
+                                              "mean_temperature",
+                                              "chandra_xray_emission"
                                             });
     _global_ctx->global_register_source_file("integration.cl",
                                             {

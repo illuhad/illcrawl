@@ -23,10 +23,7 @@
 #define INTERPOLATION_CL
 
 
-typedef float scalar;
-typedef float4 vector4;
-typedef float3 vector3;
-typedef float2 vector2;
+#include "types.cl"
 
 
 scalar distance2(vector2 a, vector2 b)

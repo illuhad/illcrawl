@@ -28,6 +28,7 @@
 #include "math.hpp"
 #include "hdf5_io.hpp"
 #include "qcl.hpp"
+#include "chandra.hpp"
 
 namespace illcrawl {
 namespace reconstruction_quantity {
@@ -42,6 +43,8 @@ public:
     return std::vector<math::scalar>(get_required_datasets().size(), 1.0);
   }
   virtual qcl::kernel_ptr get_kernel(const qcl::device_context_ptr& ctx) const = 0;
+
+  virtual void push_additional_kernel_args(qcl::kernel_argument_list& args) const {}
 
   virtual bool is_integrated_quantity() const
   {
@@ -133,6 +136,40 @@ public:
   }
 
   virtual ~xray_emission(){}
+};
+
+class chandra_xray_emission : public density_temperature_electron_abundance_based_quantity
+{
+public:
+  chandra_xray_emission(const io::illustris_data_loader* data,
+                        const qcl::device_context_ptr& ctx)
+      : density_temperature_electron_abundance_based_quantity{data},
+        _arf{ctx}
+  {}
+
+  virtual qcl::kernel_ptr get_kernel(const qcl::device_context_ptr& ctx) const override
+  {
+    return ctx->get_kernel("chandra_xray_emission");
+  }
+
+  virtual bool is_integrated_quantity() const override
+  {
+    return true;
+  }
+
+  virtual void push_additional_kernel_args(qcl::kernel_argument_list& args) const override
+  {
+    // The kernel also needs the arf
+    args.push(_arf.get_tabulated_function_values());
+    args.push(_arf.get_min_x());
+    args.push(static_cast<cl_int>(_arf.get_num_function_values()));
+    args.push(_arf.get_dx());
+  }
+
+  virtual ~chandra_xray_emission(){}
+
+private:
+  chandra::arf _arf;
 };
 
 
@@ -279,6 +316,7 @@ public:
     args.push(static_cast<cl_uint>(_num_elements));
     for(std::size_t i = 0; i < _input_buffers.size(); ++i)
       args.push(_input_buffers[i]);
+    _quantity.push_additional_kernel_args(args);
 
     cl_int err =_ctx->get_command_queue().enqueueNDRangeKernel(*kernel,
                                                                cl::NullRange,

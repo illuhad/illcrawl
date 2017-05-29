@@ -211,6 +211,9 @@ int main(int argc, char** argv)
   auto mean_temperature =
       std::make_shared<illcrawl::reconstruction_quantity::mean_temperature>(&loader);
 
+  auto chandra_xray_emission=
+      std::make_shared<illcrawl::reconstruction_quantity::chandra_xray_emission>(&loader, ctx);
+
   illcrawl::math::vector3 center = {{0.0, distribution_center[1], distribution_center[2]}};
 
   //illcrawl::smoothed_quantity_reconstruction2D reconstruction{ctx};
@@ -275,12 +278,12 @@ int main(int argc, char** argv)
   //slice.create_slice(reconstructor, *xray_emission, result, 0);
 
   //illcrawl::volumetric_tomography<illcrawl::volumetric_nn8_reconstruction> tomography{cam};
-  //tomography.create_tomographic_cube(reconstructor, *xray_emission, 1000.0, result);
+  //tomography.create_tomographic_cube(reconstructor, *chandra_xray_emission, 1000.0, result);
 
   illcrawl::integration::relative_tolerance<illcrawl::math::scalar> tol{1.e-2};
 
   illcrawl::volumetric_integration<illcrawl::volumetric_nn8_reconstruction> integrator{ctx, cam};
-  integrator.parallel_create_projection(reconstructor, *xray_emission, 1000.0,
+  integrator.parallel_create_projection(reconstructor, *chandra_xray_emission, 1000.0,
                                tol, result);
   
   /*render_result temperature_result;

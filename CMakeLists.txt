@@ -37,7 +37,7 @@ find_package(Boost
 include_directories(${PROJECT_BINARY_DIR} ${OpenCL_INCLUDE_DIRS} ${HDF5_INCLUDE_DIRS} ${BOOST_INCLUDE_DIR})
 
 	
-add_executable(illcrawl illcrawl.cpp)
+add_executable(illcrawl illcrawl.cpp chandra.cpp)
 target_link_libraries (illcrawl ${OpenCL_LIBRARIES} ${HDF5_CXX_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT} -lcfitsio)
 # Copy CL sources
 add_custom_command(TARGET illcrawl POST_BUILD
