@@ -25,7 +25,7 @@ public:
   grid_coordinate_translator(const math::vector_n<Dim>& center,
                              const math::vector_n<Dim>& extent,
                              std::size_t num_cells_x)
-    : _center{center}, _extent{extent}
+    : _center(center), _extent(extent)
   {
     _num_cells[0] = num_cells_x;
     for(std::size_t i = 1; i < Dim; ++i)
@@ -37,7 +37,7 @@ public:
   grid_coordinate_translator(const math::vector_n<Dim>& center,
                              const math::vector_n<Dim>& extent,
                              const grid_index& num_cells)
-    :_center{center}, _extent{extent}
+    :_center(center), _extent(extent)
   {
     for(std::size_t i = 0; i < Dim; ++i)
       _num_cells[i] = static_cast<std::size_t>(num_cells[i]);
@@ -47,7 +47,7 @@ public:
   grid_coordinate_translator(const math::vector_n<Dim>& center,
                              const math::vector_n<Dim>& extent,
                              const grid_uindex& num_cells)
-    :_center{center}, _extent{extent}
+    :_center(center), _extent(extent)
   {
     _num_cells = num_cells;
     init();

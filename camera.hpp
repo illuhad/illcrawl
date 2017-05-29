@@ -35,8 +35,8 @@ public:
          math::scalar screen_width,
          std::size_t num_pix_x,
          std::size_t num_pix_y)
-    : _position{position},
-      _look_at{look_at},
+    : _position(position),
+      _look_at(look_at),
       _pixel_size{screen_width/static_cast<math::scalar>(num_pix_x)},
       _num_pixels{{num_pix_x, num_pix_y}}
   {
