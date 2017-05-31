@@ -1,7 +1,7 @@
 
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Wall -Wextra -Wno-ignored-attributes -Wno-unused-parameter")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -g -ffast-math -march=native -Wall -Wno-ignored-attributes -Wextra -Wno-unused-parameter")
-
+set(CMAKE_CXX_COMPILER mpic++)
 
 cmake_minimum_required (VERSION 3.1)
 project (illcrawl)
@@ -26,19 +26,19 @@ endif()
 #find_package(OpenGL REQUIRED)
 #find_package(GLEW REQUIRED)
 #find_package(GLUT REQUIRED)
+find_package(MPI REQUIRED)
 find_package(OpenCL REQUIRED)
 find_package(HDF5 REQUIRED COMPONENTS CXX)
 find_package(Threads REQUIRED)
 find_package(Boost
   1.61      # Minimum or EXACT version e.g. 1.36.0
   REQUIRED             # Fail with error if Boost is not found
-  )
+  mpi serialization)
 
 include_directories(${PROJECT_BINARY_DIR} ${OpenCL_INCLUDE_DIRS} ${HDF5_INCLUDE_DIRS} ${BOOST_INCLUDE_DIR})
 
-	
 add_executable(illcrawl illcrawl.cpp chandra.cpp)
-target_link_libraries (illcrawl ${OpenCL_LIBRARIES} ${HDF5_CXX_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT} -lcfitsio)
+target_link_libraries (illcrawl ${OpenCL_LIBRARIES} ${HDF5_CXX_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT} boost_mpi boost_serialization cfitsio)
 # Copy CL sources
 add_custom_command(TARGET illcrawl POST_BUILD
                   COMMAND ${CMAKE_COMMAND} -E copy

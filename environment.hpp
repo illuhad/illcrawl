@@ -21,6 +21,12 @@
 #ifndef ENVIRONMENT
 #define ENVIRONMENT
 
+#include <string>
+#include <boost/mpi.hpp>
+#include <boost/serialization/string.hpp>
+#include <boost/serialization/vector.hpp>
+#include <boost/serialization/map.hpp>
+#include <map>
 #include "qcl.hpp"
 
 namespace illcrawl {
@@ -28,8 +34,15 @@ namespace illcrawl {
 class environment
 {
 public:
-  environment()
+  environment(int& argc, char**& argv)
+    : _mpi_environment{argc, argv, boost::mpi::threading::funneled}
   {
+
+    boost::mpi::communicator comm = get_communicator();
+    _num_global_processes = comm.size();
+
+    this->_processor_name = boost::mpi::environment::processor_name();
+
     const cl::Platform& plat =
         _env.get_platform_by_preference({"NVIDIA", "AMD", "Intel"});
 
@@ -64,7 +77,22 @@ public:
                                                "construct_evaluation_points_over_camera_plane",
                                                "gather_integrand_evaluations"
                                             });
-    _ctx = _global_ctx->device();
+
+    determine_num_local_processes();
+
+    _ctx = _global_ctx->device(static_cast<std::size_t>(_local_rank)
+                               % _global_ctx->get_num_devices());
+
+    boost::mpi::all_gather(get_communicator(), _ctx->get_device_name(), _device_names);
+
+    std::string extensions;
+    _ctx->get_supported_extensions(extensions);
+
+    boost::mpi::all_gather(get_communicator(), extensions, _device_extensions);
+  }
+
+  ~environment()
+  {
   }
 
   qcl::device_context_ptr get_compute_device() const
@@ -76,10 +104,69 @@ public:
   {
     return _global_ctx;
   }
+
+  boost::mpi::communicator get_communicator() const
+  {
+    return boost::mpi::communicator{};
+  }
+
+  const std::map<std::string, std::vector<int>>& get_node_rank_map() const
+  {
+    return _node_rank_map;
+  }
+
+  const std::vector<std::string>& get_device_names() const
+  {
+    return _device_names;
+  }
+
+  const std::vector<std::string>& get_device_extensions() const
+  {
+    return _device_extensions;
+  }
+
+  static int get_master_rank() {return 0;}
 private:
+
+  void determine_num_local_processes()
+  {
+    std::vector<std::string> names;
+    boost::mpi::gather(get_communicator(), _processor_name, names, 0);
+
+    _node_rank_map.clear();
+    for(std::size_t i = 0; i < names.size(); ++i)
+      _node_rank_map[names[i]].push_back(i);
+
+    boost::mpi::broadcast(get_communicator(), _node_rank_map, 0);
+
+    _num_local_processes = _node_rank_map[_processor_name].size();
+
+    for(std::size_t i = 0; i < _node_rank_map[_processor_name].size(); ++i)
+    {
+      if(_node_rank_map[_processor_name][i] == get_communicator().rank())
+      {
+        _local_rank = i;
+        return;
+      }
+    }
+    throw std::runtime_error("Error in MPI environment: could not determine local node rank.");
+  }
+
   qcl::global_context_ptr _global_ctx;
   qcl::device_context_ptr _ctx;
   qcl::environment _env;
+
+  int _num_global_processes;
+  int _num_local_processes;
+  int _local_rank;
+
+  std::string _processor_name;
+
+  boost::mpi::environment _mpi_environment;
+
+  std::map<std::string, std::vector<int>> _node_rank_map;
+  std::vector<std::string> _device_names;
+  std::vector<std::string> _device_extensions;
 };
 
 }

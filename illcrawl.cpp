@@ -29,10 +29,13 @@
 #include "reconstruction.hpp"
 #include "volumetric_reconstruction.hpp"
 #include "environment.hpp"
+#include "master_ostream.hpp"
+#include "tree_ostream.hpp"
+#include "scheduler.hpp"
 
-void usage()
+void usage(std::ostream& ostr)
 {
-  std::cout << "Usage: illcrawl <Path to HDF5 file>" << std::endl;
+  ostr << "Usage: illcrawl <Path to HDF5 file>" << std::endl;
 }
 
 using illcrawl::device_scalar;
@@ -155,29 +158,45 @@ void render_luminosity_weighted_temperature(
 
 int main(int argc, char** argv)
 {
+  illcrawl::environment env{argc, argv};
+  illcrawl::util::master_ostream master_cout{
+    std::cout,
+    env.get_communicator(),
+    env.get_master_rank()
+  };
 
   if (argc != 2)
   {
-    usage();
+    usage(master_cout);
 
     return -1;
   }
   std::string data_file = argv[1];
 
-
-  illcrawl::environment env;
-  for (std::size_t i = 0;
-       i < env.get_compute_environment()->get_num_devices(); ++i)
+  master_cout << "Detected system configuration:" << std::endl;
+  illcrawl::util::tree_formatter tree_output{"Root"};
+  for(const auto& node : env.get_node_rank_map())
   {
-    std::cout << "Device " << i << ":" << std::endl;
-    std::cout << "   Name: "
-              << env.get_compute_environment()->device(i)->get_device_name()
-              << std::endl;
+    std::string node_entry_name = node.first;
+    illcrawl::util::tree_formatter::node node_entry;
+    for(int rank = 0; rank < static_cast<int>(node.second.size()); ++rank)
+    {
+      int global_rank = node.second[rank];
+      std::string process_entry_name = "Local rank "
+          +std::to_string(rank)
+          +" (Global rank "+std::to_string(global_rank)
+          +")";
 
-    std::string extensions;
-    env.get_compute_environment()->device(i)->get_supported_extensions(extensions);
-    std::cout << "   Capabilities: " << extensions << std::endl;
+      illcrawl::util::tree_formatter::node process_entry;
+      process_entry.append_content("Using device: " + env.get_device_names()[global_rank]+"\n");
+      process_entry.append_content("Device capabilities: " + env.get_device_extensions()[global_rank]+"\n");
+
+      node_entry.add_node(process_entry_name, process_entry);
+    }
+    tree_output.get_root().add_node(node_entry_name, node_entry);
   }
+  master_cout << tree_output << std::endl;
+
 
   qcl::device_context_ptr ctx = env.get_compute_device();
 
@@ -277,14 +296,18 @@ int main(int argc, char** argv)
   //illcrawl::volumetric_slice<illcrawl::volumetric_nn8_reconstruction> slice{cam};
   //slice.create_slice(reconstructor, *xray_emission, result, 0);
 
-  //illcrawl::volumetric_tomography<illcrawl::volumetric_nn8_reconstruction> tomography{cam};
-  //tomography.create_tomographic_cube(reconstructor, *chandra_xray_emission, 1000.0, result);
+  illcrawl::uniform_work_scheduler scheduler{env.get_communicator()};
+  illcrawl::distributed_volumetric_tomography<illcrawl::volumetric_nn8_reconstruction,
+                                              illcrawl::uniform_work_scheduler>
+      tomography{env.get_communicator(), scheduler, cam};
+  // Create tomography on the master rank
+  tomography.create_tomographic_cube(reconstructor, *chandra_xray_emission, 1000.0, result);
 
   illcrawl::integration::relative_tolerance<illcrawl::math::scalar> tol{1.e-2};
 
-  illcrawl::volumetric_integration<illcrawl::volumetric_nn8_reconstruction> integrator{ctx, cam};
-  integrator.parallel_create_projection(reconstructor, *chandra_xray_emission, 1000.0,
-                               tol, result);
+  //illcrawl::volumetric_integration<illcrawl::volumetric_nn8_reconstruction> integrator{ctx, cam};
+  //integrator.parallel_create_projection(reconstructor, *chandra_xray_emission, 1000.0,
+  //                             tol, result);
   
   /*render_result temperature_result;
   illcrawl::volumetric_nn8_reconstruction reconstructor_b{
@@ -295,8 +318,11 @@ int main(int argc, char** argv)
   for(std::size_t i = 0; i < temperature_result.get_num_elements(); ++i)
     result.data()[i] = temperature_result.data()[i] / result.data()[i];*/
 
-  illcrawl::util::fits<device_scalar> result_file{"illcrawl_render.fits"};
-  result_file.save(result);
+  if(env.get_communicator().rank() == env.get_master_rank())
+  {
+    illcrawl::util::fits<device_scalar> result_file{"illcrawl_render.fits"};
+    result_file.save(result);
+  }
 
   return 0;
 }

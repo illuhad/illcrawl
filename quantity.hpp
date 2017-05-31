@@ -85,10 +85,12 @@ public:
   density_temperature_based_quantity(const io::illustris_data_loader* data)
       : illustris_quantity{
             data,
-            {{io::illustris_data_loader::get_density_identifier(),
-              io::illustris_data_loader::get_internal_energy_identifier()}}}
-  {
-  }
+            std::vector<std::string>{
+              io::illustris_data_loader::get_density_identifier(),
+              io::illustris_data_loader::get_internal_energy_identifier()
+            }
+          }
+  {}
 
   virtual std::vector<math::scalar> get_quantitiy_scaling_factors() const override
   {

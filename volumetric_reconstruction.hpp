@@ -26,6 +26,7 @@
 #include <cstdlib>
 #include <algorithm>
 #include <random>
+#include <boost/mpi.hpp>
 
 #include "qcl.hpp"
 #include "math.hpp"
@@ -37,8 +38,10 @@
 #include "interpolation_tree.hpp"
 #include "particle_tiles.hpp"
 #include "camera.hpp"
+#include "scheduler.hpp"
 
 #include "integration.hpp"
+#include "environment.hpp"
 
 namespace illcrawl {
 
@@ -795,24 +798,46 @@ public:
     : _cam{cam}
   {}
 
-  void create_tomographic_cube(Volumetric_reconstructor& reconstruction,
+  virtual ~volumetric_tomography(){}
+
+  void set_camera(const camera& cam)
+  {
+    _cam = cam;
+  }
+
+  virtual void create_tomographic_cube(Volumetric_reconstructor& reconstruction,
                                const reconstruction_quantity::quantity& reconstructed_quantity,
                                math::scalar z_range,
                                util::multi_array<device_scalar>& output)
   {
-    std::size_t num_pixels_z = static_cast<std::size_t>(z_range / _cam.get_pixel_size());
-    if(num_pixels_z == 0)
-      num_pixels_z = 1;
+
+    std::size_t total_num_pixels_z = static_cast<std::size_t>(z_range / _cam.get_pixel_size());
+    if(total_num_pixels_z == 0)
+      total_num_pixels_z = 1;
+
+    create_tomographic_cube(reconstruction, reconstructed_quantity, 0, total_num_pixels_z, output);
+
+  }
+
+  void create_tomographic_cube(Volumetric_reconstructor& reconstruction,
+                               const reconstruction_quantity::quantity& reconstructed_quantity,
+                               std::size_t initial_z_step,
+                               std::size_t num_steps,
+                               util::multi_array<device_scalar>& output)
+  {
+
+    if(num_steps == 0)
+      return;
 
     output = util::multi_array<device_scalar>{_cam.get_num_pixels(0),
                                               _cam.get_num_pixels(1),
-                                              num_pixels_z};
+                                              num_steps};
 
     std::fill(output.begin(), output.end(), 0.0f);
 
     camera moving_cam = _cam;
 
-    for(std::size_t z = 0; z < num_pixels_z; ++z)
+    for(std::size_t z = initial_z_step; z < num_steps; ++z)
     {
       std::cout << "z = " << z << std::endl;
 
@@ -835,11 +860,78 @@ public:
           output[output_idx] = slice_data[slice_idx];
         }
     }
-
   }
 
+  const camera& get_camera() const
+  {
+    return _cam;
+  }
 private:
+
   camera _cam;
+};
+
+template<class Volumetric_reconstructor, class Scheduler>
+class distributed_volumetric_tomography : public volumetric_tomography<Volumetric_reconstructor>
+{
+public:
+  distributed_volumetric_tomography(const boost::mpi::communicator& comm,
+                                    const Scheduler& scheduler,
+                                    const camera& cam)
+    : volumetric_tomography<Volumetric_reconstructor>{cam},
+      _comm{comm},
+      _scheduler{scheduler}
+  {}
+
+  virtual void create_tomographic_cube(Volumetric_reconstructor& reconstruction,
+                               const reconstruction_quantity::quantity& reconstructed_quantity,
+                               math::scalar z_range,
+                               util::multi_array<device_scalar>& output) override
+  {
+
+    std::size_t total_num_pixels_z = static_cast<std::size_t>(z_range /
+                                                              this->get_camera().get_pixel_size());
+    if(total_num_pixels_z == 0)
+      total_num_pixels_z = 1;
+
+    Scheduler scheduler{_comm};
+    scheduler.run(total_num_pixels_z);
+
+    util::multi_array<device_scalar> local_result;
+
+
+    volumetric_tomography<Volumetric_reconstructor>::create_tomographic_cube(
+                                  reconstruction,
+                                  reconstructed_quantity,
+                                  scheduler.own_begin(),
+                                  scheduler.own_end() - scheduler.own_begin(),
+                                  local_result);
+
+    // Gather results
+    if(_comm.rank() == 0)
+      output = util::multi_array<device_scalar>{
+           local_result.get_extent_of_dimension(0),
+           local_result.get_extent_of_dimension(1),
+           total_num_pixels_z
+      };
+
+    std::vector<int> sizes;
+    boost::mpi::gather(_comm,
+                       static_cast<int>(scheduler.own_end() - scheduler.own_begin()),
+                       sizes,
+                       environment::get_master_rank());
+
+    boost::mpi::gatherv(_comm, local_result.data(),
+                        local_result.get_num_elements(),
+                        output.data(),
+                        sizes,
+                        environment::get_master_rank());
+  }
+
+  virtual ~distributed_volumetric_tomography(){}
+private:
+  boost::mpi::communicator _comm;
+  Scheduler _scheduler;
 };
 
 
