@@ -1,7 +1,9 @@
 
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Wall -Wextra -Wno-ignored-attributes -Wno-unused-parameter")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -g -ffast-math -march=native -Wall -Wno-ignored-attributes -Wextra -Wno-unused-parameter")
-set(CMAKE_CXX_COMPILER mpic++)
+#set(CMAKE_CXX_COMPILER mpic++)
+set(MPI_C_COMPILER mpicc)
+set(MPI_CXX_COMPILER mpic++)
 
 cmake_minimum_required (VERSION 3.1)
 project (illcrawl)
@@ -32,13 +34,15 @@ find_package(HDF5 REQUIRED COMPONENTS CXX)
 find_package(Threads REQUIRED)
 find_package(Boost
   1.61      # Minimum or EXACT version e.g. 1.36.0
-  REQUIRED             # Fail with error if Boost is not found
+  REQUIRED             # Faiil with error if Boost is not found
   mpi serialization)
 
-include_directories(${PROJECT_BINARY_DIR} ${OpenCL_INCLUDE_DIRS} ${HDF5_INCLUDE_DIRS} ${BOOST_INCLUDE_DIR})
+set(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} ${MPI_CXX_COMPILE_FLAGS})
+
+include_directories(${PROJECT_BINARY_DIR} ${OpenCL_INCLUDE_DIRS} ${HDF5_INCLUDE_DIRS} ${Boost_INCLUDE_DIR} ${MPI_C_INCLUDE_PATH})
 
 add_executable(illcrawl illcrawl.cpp chandra.cpp)
-target_link_libraries (illcrawl ${OpenCL_LIBRARIES} ${HDF5_CXX_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT} boost_mpi boost_serialization cfitsio)
+target_link_libraries (illcrawl ${MPI_CXX_LINK_FLAGS} ${MPI_CXX_LIBRARIES} ${OpenCL_LIBRARIES} ${HDF5_CXX_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT}  ${Boost_MPI_LIBRARY} ${Boost_SERIALIZATION_LIBRARY} cfitsio)
 # Copy CL sources
 add_custom_command(TARGET illcrawl POST_BUILD
                   COMMAND ${CMAKE_COMMAND} -E copy

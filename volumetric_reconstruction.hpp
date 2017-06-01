@@ -837,12 +837,12 @@ public:
 
     camera moving_cam = _cam;
 
-    for(std::size_t z = initial_z_step; z < num_steps; ++z)
+    for(std::size_t z = 0; z < num_steps; ++z)
     {
       std::cout << "z = " << z << std::endl;
 
       moving_cam.set_position(_cam.get_position()
-                              + z * _cam.get_pixel_size() * moving_cam.get_look_at());
+                              + (initial_z_step + z) * _cam.get_pixel_size() * moving_cam.get_look_at());
 
       util::multi_array<device_scalar> slice_data;
       volumetric_slice<Volumetric_reconstructor> slice{moving_cam};
@@ -898,8 +898,6 @@ public:
     scheduler.run(total_num_pixels_z);
 
     util::multi_array<device_scalar> local_result;
-
-
     volumetric_tomography<Volumetric_reconstructor>::create_tomographic_cube(
                                   reconstruction,
                                   reconstructed_quantity,
@@ -917,7 +915,7 @@ public:
 
     std::vector<int> sizes;
     boost::mpi::gather(_comm,
-                       static_cast<int>(scheduler.own_end() - scheduler.own_begin()),
+                       static_cast<int>(local_result.get_num_elements()),
                        sizes,
                        environment::get_master_rank());
 

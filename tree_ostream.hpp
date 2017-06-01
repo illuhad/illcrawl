@@ -54,7 +54,14 @@ public:
     void swap(node& other)
     {
       std::swap(this->_sub_nodes, other._sub_nodes);
-      this->_content.swap(other._content);
+
+      // Swapping stringstreams seems to be buggy
+      // with older versions of gcc, hence we do it manually
+      std::string my_content = this->_content.str();
+      this->_content.clear();
+      this->_content.str(other._content.str());
+      other._content.clear();
+      other._content.str(my_content);
     }
 
     template<class T>

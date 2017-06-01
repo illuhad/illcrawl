@@ -56,17 +56,19 @@ public:
     return _domain_beginnings[_comm.rank()];
   }
 
+  /// \return The id of the first job that
+  /// does not belong to the local domain anymore.
   std::size_t own_end()  const
   {
     if(_comm.rank() == _comm.size() - 1)
-      return _num_jobs - 1;
+      return _num_jobs;
 
-    return _domain_beginnings[_comm.rank() + 1] - 1;
+    return _domain_beginnings[_comm.rank() + 1];
   }
 
   std::size_t get_num_local_jobs() const
   {
-    return own_end() - own_begin() + 1;
+    return own_end() - own_begin();
   }
 private:
   boost::mpi::communicator _comm;

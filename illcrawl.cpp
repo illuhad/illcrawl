@@ -210,12 +210,12 @@ int main(int argc, char** argv)
       distribution.get_distribution_size();
 
 
-  std::cout << "Distribution center: " << distribution_center[0] << ", "
-            << distribution_center[1] << ", "
-            << distribution_center[2]
-            << std::endl;
-  std::cout << "Distribution size: " << distribution_size[0] << "x"
-            << distribution_size[1] << "x" << distribution_size[2] << std::endl;
+  master_cout << "Distribution center: " << distribution_center[0] << ", "
+              << distribution_center[1] << ", "
+              << distribution_center[2]
+              << std::endl;
+  master_cout << "Distribution size: " << distribution_size[0] << "x"
+              << distribution_size[1] << "x" << distribution_size[2] << std::endl;
 
 
   auto luminosity_weighted_temperature = std::make_shared<
