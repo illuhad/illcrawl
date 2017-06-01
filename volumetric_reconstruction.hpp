@@ -886,7 +886,7 @@ public:
   virtual void create_tomographic_cube(Volumetric_reconstructor& reconstruction,
                                const reconstruction_quantity::quantity& reconstructed_quantity,
                                math::scalar z_range,
-                               util::multi_array<device_scalar>& output) override
+                               util::multi_array<device_scalar>& local_result) override
   {
 
     std::size_t total_num_pixels_z = static_cast<std::size_t>(z_range /
@@ -894,31 +894,30 @@ public:
     if(total_num_pixels_z == 0)
       total_num_pixels_z = 1;
 
-    Scheduler scheduler{_comm};
-    scheduler.run(total_num_pixels_z);
+    _scheduler.run(total_num_pixels_z);
 
-    util::multi_array<device_scalar> local_result;
     volumetric_tomography<Volumetric_reconstructor>::create_tomographic_cube(
                                   reconstruction,
                                   reconstructed_quantity,
-                                  scheduler.own_begin(),
-                                  scheduler.own_end() - scheduler.own_begin(),
+                                  _scheduler.own_begin(),
+                                  _scheduler.own_end() - _scheduler.own_begin(),
                                   local_result);
 
     // Gather results
+    /*
     if(_comm.rank() == 0)
       output = util::multi_array<device_scalar>{
            local_result.get_extent_of_dimension(0),
            local_result.get_extent_of_dimension(1),
            total_num_pixels_z
-      };
+      };*/
 
     // First, gather the sizes for the subsequent call of gatherv().
     // According to the MPI standard, these sizes should only
     // be significant on the root process, but the boost::mpi
     // wrapper seems to require them on all processes (Bug?) hence
     // we use all_gather().
-    std::vector<int> sizes;
+    /*std::vector<int> sizes;
     boost::mpi::all_gather(_comm,
                        static_cast<int>(local_result.get_num_elements()),
                        sizes);
@@ -928,10 +927,15 @@ public:
                         local_result.get_num_elements(),
                         output.data(),
                         sizes,
-                        environment::get_master_rank());
+                        environment::get_master_rank());*/
   }
 
   virtual ~distributed_volumetric_tomography(){}
+
+  const Scheduler& get_partitioning() const
+  {
+    return _scheduler;
+  }
 private:
   boost::mpi::communicator _comm;
   Scheduler _scheduler;

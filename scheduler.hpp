@@ -31,7 +31,7 @@ class uniform_work_scheduler
 {
 public:
   uniform_work_scheduler(const boost::mpi::communicator& comm)
-  : _comm(comm)
+    : _comm(comm), _num_jobs{0}
   {}
 
   void run(std::size_t num_jobs)
@@ -69,6 +69,16 @@ public:
   std::size_t get_num_local_jobs() const
   {
     return own_end() - own_begin();
+  }
+
+  std::size_t get_num_global_jobs() const
+  {
+    return _num_jobs;
+  }
+
+  boost::mpi::communicator get_communicator() const
+  {
+    return _comm;
   }
 private:
   boost::mpi::communicator _comm;

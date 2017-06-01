@@ -296,10 +296,9 @@ int main(int argc, char** argv)
   //illcrawl::volumetric_slice<illcrawl::volumetric_nn8_reconstruction> slice{cam};
   //slice.create_slice(reconstructor, *xray_emission, result, 0);
 
-  illcrawl::uniform_work_scheduler scheduler{env.get_communicator()};
   illcrawl::distributed_volumetric_tomography<illcrawl::volumetric_nn8_reconstruction,
                                               illcrawl::uniform_work_scheduler>
-      tomography{env.get_communicator(), scheduler, cam};
+      tomography{env.get_communicator(), illcrawl::uniform_work_scheduler{env.get_communicator()}, cam};
   // Create tomography on the master rank
   tomography.create_tomographic_cube(reconstructor, *chandra_xray_emission, 1000.0, result);
 
@@ -318,11 +317,11 @@ int main(int argc, char** argv)
   for(std::size_t i = 0; i < temperature_result.get_num_elements(); ++i)
     result.data()[i] = temperature_result.data()[i] / result.data()[i];*/
 
-  if(env.get_communicator().rank() == env.get_master_rank())
-  {
-    illcrawl::util::fits<device_scalar> result_file{"illcrawl_render.fits"};
-    result_file.save(result);
-  }
+
+  illcrawl::util::distributed_fits_slices<illcrawl::uniform_work_scheduler, device_scalar>
+      result_file{tomography.get_partitioning(), "illcrawl_render.fits"};
+
+  result_file.save(result);
 
   return 0;
 }

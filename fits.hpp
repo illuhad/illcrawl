@@ -55,6 +55,17 @@ struct fits_datatype<double>
   { return TDOUBLE; }
 };
 
+static std::string fits_error(int error_code)
+{
+  char descr[30];
+  fits_get_errstatus(error_code, descr);
+  std::string result;
+
+  for(int i = 0; i < 30 && descr[i]; ++i)
+    result += descr[i];
+  return result;
+}
+
 /// Implements loading and saving fits images. It is the responsibility of the
 /// user to take care of parallelization effects, i.e. preventing two processes 
 /// from saving to the same file at the same time or distributing loaded data
@@ -168,5 +179,130 @@ private:
 }
 }
 
-#endif	/* FITS_HPP */
+
+#ifndef WITHOUT_MPI
+#include <boost/mpi.hpp>
+
+
+namespace illcrawl{
+namespace util {
+
+template<class Scheduler, class T>
+class distributed_fits_slices
+{
+public:
+  distributed_fits_slices(const Scheduler& partitioning,
+                          const std::string& filename)
+    : _comm{partitioning.get_communicator()}, _partitioning{partitioning}, _filename{filename}
+  {}
+
+  void load(util::multi_array<T>& out) const
+  {
+    fitsfile* file;
+    int status = 0;
+    int bitpix, naxis_flag;
+    std::vector<long> naxes(3, 0);
+
+    if(!fits_open_file(&file, _filename.c_str(), READONLY, &status))
+    {
+      if(!fits_get_img_param(file, 3, &bitpix, &naxis_flag, naxes.data(),
+                             &status))
+      {
+        std::vector<std::size_t> array_sizes;
+        array_sizes.reserve(3);
+        for(std::size_t i = 0; i < naxes.size(); ++i)
+          array_sizes.push_back(static_cast<std::size_t>(naxes[i]));
+
+        _partitioning.run(array_sizes[2]);
+        out = util::multi_array<T>(array_sizes[0], array_sizes[1], _partitioning.get_num_local_jobs());
+
+        long fpixel [3] = {1, 1, _partitioning.own_begin() + 1};
+        long lpixel [3] = {array_sizes[0], array_sizes[1], _partitioning.own_end()};
+        long inc [3] = {1, 1, 1};
+
+        fits_read_subset(file, fits_datatype<T>::datatype(),
+                         fpixel,
+                         lpixel,
+                         inc,
+                         nullptr, out.data(), nullptr, &status);
+
+      }
+
+      fits_close_file(file, &status);
+    }
+    else
+      throw std::runtime_error(std::string("Could not load fits file: ") + _filename);
+  }
+
+  void save(const util::multi_array<T>& data) const
+  {
+    fitsfile* file;
+    int status = 0;
+
+
+    // Create new file on the master process
+    if(_comm.rank() == 0)
+    {
+      long naxes [3] = {
+        static_cast<long>(data.get_extent_of_dimension(0)),
+        static_cast<long>(data.get_extent_of_dimension(1)),
+        static_cast<long>(_partitioning.get_num_global_jobs())
+      };
+
+      // cfitsio will only overwrite files when their names are preceded by an
+      // exclamation mark...
+      std::string fitsio_filename = "!"+_filename;
+      if (fits_create_file(&file, fitsio_filename.c_str(), &status))
+        throw std::runtime_error(std::string("Could not create fits file: ")
+                                 + _filename
+                                 + " (Fits Error: "
+                                 + fits_error(status)
+                                 + ")");
+
+      if (fits_create_img(file, fits_datatype<T>::image_type(),
+                           3, naxes, &status))
+        throw std::runtime_error(std::string("Could not create fits image: ") + _filename
+                                 + " (Fits Error: "
+                                 + fits_error(status)
+                                 + ")");
+
+      fits_close_file(file, &status);
+    }
+
+    // Wait until file is created
+    _comm.barrier();
+
+    // Open file on all processes
+    if(fits_open_file(&file, _filename.c_str(), READWRITE, &status))
+      throw std::runtime_error(std::string("Could not load fits file: ") + _filename);
+
+    long fpixel [] = {1, 1, static_cast<long>(_partitioning.own_begin()) + 1};
+    long lpixel [] = {
+      static_cast<long>(data.get_extent_of_dimension(0)),
+      static_cast<long>(data.get_extent_of_dimension(1)),
+      _partitioning.own_end()
+    };
+
+    fits_write_subset(file,
+                      fits_datatype<T>::datatype(),
+                      fpixel, lpixel,
+                      const_cast<T*>(data.data()),
+                      &status);
+
+    fits_close_file(file, &status);
+  }
+
+private:
+  boost::mpi::communicator _comm;
+  Scheduler _partitioning;
+  std::string _filename;
+};
+
+} // util
+} // illcrawl
+
+
+#endif // WITHOUT_MPI
+
+#endif // FITS_HPP
 
