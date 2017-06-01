@@ -913,13 +913,18 @@ public:
            total_num_pixels_z
       };
 
+    // First, gather the sizes for the subsequent call of gatherv().
+    // According to the MPI standard, these sizes should only
+    // be significant on the root process, but the boost::mpi
+    // wrapper seems to require them on all processes (Bug?) hence
+    // we use all_gather().
     std::vector<int> sizes;
-    boost::mpi::gather(_comm,
+    boost::mpi::all_gather(_comm,
                        static_cast<int>(local_result.get_num_elements()),
-                       sizes,
-                       environment::get_master_rank());
+                       sizes);
 
-    boost::mpi::gatherv(_comm, local_result.data(),
+    boost::mpi::gatherv(_comm,
+                        local_result.data(),
                         local_result.get_num_elements(),
                         output.data(),
                         sizes,
