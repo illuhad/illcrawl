@@ -323,8 +323,6 @@ __kernel void finalize_volumetric_nn8_reconstruction(int num_evaluation_points,
     weight_sum += weights.s5;
     weight_sum += weights.s6;
     weight_sum += weights.s7;
-    if(weight_sum == 0.0f)
-      weight_sum = 1.0f;
 
     scalar dot_product = 0.0f;
     dot_product += weights.s0 * values.s0;
@@ -336,7 +334,11 @@ __kernel void finalize_volumetric_nn8_reconstruction(int num_evaluation_points,
     dot_product += weights.s6 * values.s6;
     dot_product += weights.s7 * values.s7;
 
-    output[gid] = dot_product / weight_sum;
+    scalar result = 0.0f;
+    if(weight_sum != 0.0f && dot_product != 0.0f)
+      result = dot_product / weight_sum;
+
+    output[gid] = result;
   }
 }
 

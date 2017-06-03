@@ -31,7 +31,8 @@
 #include "environment.hpp"
 #include "master_ostream.hpp"
 #include "tree_ostream.hpp"
-#include "scheduler.hpp"
+#include "partitioner.hpp"
+#include "animation.hpp"
 
 void usage(std::ostream& ostr)
 {
@@ -202,10 +203,14 @@ int main(int argc, char** argv)
 
   illcrawl::io::illustris_gas_data_loader loader{data_file};
 
-  illcrawl::particle_distribution distribution{loader.get_coordinates()};
+  illcrawl::math::vector3 periodic_wraparound {{75000.0, 75000.0, 75000.0}};
+  illcrawl::particle_distribution distribution{
+    loader.get_coordinates(),
+    periodic_wraparound
+  };
 
   illcrawl::math::vector3 distribution_center =
-      distribution.get_distribution_center();
+      distribution.get_extent_center();
   illcrawl::math::vector3 distribution_size =
       distribution.get_distribution_size();
 
@@ -233,7 +238,7 @@ int main(int argc, char** argv)
   auto chandra_xray_emission=
       std::make_shared<illcrawl::reconstruction_quantity::chandra_xray_emission>(&loader, ctx);
 
-  illcrawl::math::vector3 center = {{0.0, distribution_center[1], distribution_center[2]}};
+  illcrawl::math::vector3 center = distribution_center;
 
   //illcrawl::smoothed_quantity_reconstruction2D reconstruction{ctx};
 
@@ -262,13 +267,15 @@ int main(int argc, char** argv)
                   "illcrawl_render_emission.fits");
   */
 
-  illcrawl::math::vector3 periodic_wraparound {{75000.0, 75000.0, 75000.0}};
-  illcrawl::math::vector3 volume_size = {{2000.0, 2000.0, 2000.0}};
+
+  illcrawl::math::vector3 volume_size = distribution_size;
   illcrawl::math::vector3 camera_look_at = {{0., 0., 1.}};
   illcrawl::volume_cutout total_render_volume{center, volume_size, periodic_wraparound};
 
-  illcrawl::math::vector3 camera_pos = {{0.0, distribution_center[1], distribution_center[2]-100.0}};
-  illcrawl::camera cam{camera_pos, camera_look_at, 0.0, 1500.0, 1024, 1024};
+  illcrawl::math::vector3 camera_pos = center;
+  illcrawl::math::scalar camera_distance = 1000.0;
+  camera_pos[2] -= camera_distance;
+  illcrawl::camera cam{camera_pos, camera_look_at, 0.0, distribution_size[0], 1024, 1024};
 
   render_result result;
   /*
@@ -296,13 +303,45 @@ int main(int argc, char** argv)
   //illcrawl::volumetric_slice<illcrawl::volumetric_nn8_reconstruction> slice{cam};
   //slice.create_slice(reconstructor, *xray_emission, result, 0);
 
-  illcrawl::distributed_volumetric_tomography<illcrawl::volumetric_nn8_reconstruction,
-                                              illcrawl::uniform_work_scheduler>
-      tomography{env.get_communicator(), illcrawl::uniform_work_scheduler{env.get_communicator()}, cam};
+  //illcrawl::distributed_volumetric_tomography<illcrawl::volumetric_nn8_reconstruction,
+  //                                            illcrawl::uniform_work_partitioner>
+  //    tomography{illcrawl::uniform_work_partitioner{env.get_communicator()}, cam};
   // Create tomography on the master rank
-  tomography.create_tomographic_cube(reconstructor, *chandra_xray_emission, 1000.0, result);
+  //tomography.create_tomographic_cube(reconstructor, *chandra_xray_emission, 1000.0, result);
 
   illcrawl::integration::relative_tolerance<illcrawl::math::scalar> tol{1.e-2};
+
+
+  illcrawl::camera_movement::dual_axis_rotation_around_point
+  camera_mover{
+    distribution_center,
+    illcrawl::math::vector3{{0,0,1}}, // initial phi axis
+    illcrawl::math::vector3{{1,0,0}}, // theta axis
+    360.0, // phi range
+    360.0  // theta range
+  };
+
+  illcrawl::animation_frame::integrated_projection
+  <
+    illcrawl::volumetric_nn8_reconstruction,
+    illcrawl::integration::relative_tolerance<illcrawl::math::scalar>
+  > frame_renderer {
+    env.get_compute_device(),
+    *chandra_xray_emission, // reconstructed quantity
+    2.0 * camera_distance, // integration depth
+    tol, // integration tolerance
+    reconstructor // reconstruction engine
+  };
+
+  illcrawl::distributed_animation<illcrawl::uniform_work_partitioner>
+  animation{
+    illcrawl::uniform_work_partitioner{env.get_communicator()},
+    frame_renderer,
+    camera_mover,
+    cam
+  };
+
+  animation(100, result);
 
   //illcrawl::volumetric_integration<illcrawl::volumetric_nn8_reconstruction> integrator{ctx, cam};
   //integrator.parallel_create_projection(reconstructor, *chandra_xray_emission, 1000.0,
@@ -318,8 +357,8 @@ int main(int argc, char** argv)
     result.data()[i] = temperature_result.data()[i] / result.data()[i];*/
 
 
-  illcrawl::util::distributed_fits_slices<illcrawl::uniform_work_scheduler, device_scalar>
-      result_file{tomography.get_partitioning(), "illcrawl_render.fits"};
+  illcrawl::util::distributed_fits_slices<illcrawl::uniform_work_partitioner, device_scalar>
+      result_file{animation.get_partitioning(), "illcrawl_render.fits"};
 
   result_file.save(result);
 

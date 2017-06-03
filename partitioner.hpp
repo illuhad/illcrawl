@@ -18,8 +18,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef SCHEDULER
-#define SCHEDULER
+#ifndef PARTITIONER
+#define PARTITIONER
 
 #include <vector>
 #include <boost/mpi.hpp>
@@ -27,10 +27,10 @@
 namespace illcrawl {
 
 
-class uniform_work_scheduler
+class uniform_work_partitioner
 {
 public:
-  uniform_work_scheduler(const boost::mpi::communicator& comm)
+  uniform_work_partitioner(const boost::mpi::communicator& comm)
     : _comm(comm), _num_jobs{0}
   {}
 

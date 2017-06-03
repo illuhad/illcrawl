@@ -26,6 +26,7 @@
 #include <cstdlib>
 #include <algorithm>
 #include <random>
+#include <functional>
 #include <boost/mpi.hpp>
 
 #include "qcl.hpp"
@@ -38,7 +39,7 @@
 #include "interpolation_tree.hpp"
 #include "particle_tiles.hpp"
 #include "camera.hpp"
-#include "scheduler.hpp"
+#include "partitioner.hpp"
 
 #include "integration.hpp"
 #include "environment.hpp"
@@ -819,6 +820,12 @@ public:
 
   }
 
+  const camera& get_camera() const
+  {
+    return _cam;
+  }
+
+protected:
   void create_tomographic_cube(Volumetric_reconstructor& reconstruction,
                                const reconstruction_quantity::quantity& reconstructed_quantity,
                                std::size_t initial_z_step,
@@ -862,25 +869,20 @@ public:
     }
   }
 
-  const camera& get_camera() const
-  {
-    return _cam;
-  }
+
 private:
 
   camera _cam;
 };
 
-template<class Volumetric_reconstructor, class Scheduler>
+template<class Volumetric_reconstructor, class Partitioner>
 class distributed_volumetric_tomography : public volumetric_tomography<Volumetric_reconstructor>
 {
 public:
-  distributed_volumetric_tomography(const boost::mpi::communicator& comm,
-                                    const Scheduler& scheduler,
+  distributed_volumetric_tomography(const Partitioner& partitioner,
                                     const camera& cam)
     : volumetric_tomography<Volumetric_reconstructor>{cam},
-      _comm{comm},
-      _scheduler{scheduler}
+      _partitioner{partitioner}
   {}
 
   virtual void create_tomographic_cube(Volumetric_reconstructor& reconstruction,
@@ -894,51 +896,26 @@ public:
     if(total_num_pixels_z == 0)
       total_num_pixels_z = 1;
 
-    _scheduler.run(total_num_pixels_z);
+    _partitioner.run(total_num_pixels_z);
 
     volumetric_tomography<Volumetric_reconstructor>::create_tomographic_cube(
                                   reconstruction,
                                   reconstructed_quantity,
-                                  _scheduler.own_begin(),
-                                  _scheduler.own_end() - _scheduler.own_begin(),
+                                  _partitioner.own_begin(),
+                                  _partitioner.own_end() - _partitioner.own_begin(),
                                   local_result);
 
-    // Gather results
-    /*
-    if(_comm.rank() == 0)
-      output = util::multi_array<device_scalar>{
-           local_result.get_extent_of_dimension(0),
-           local_result.get_extent_of_dimension(1),
-           total_num_pixels_z
-      };*/
-
-    // First, gather the sizes for the subsequent call of gatherv().
-    // According to the MPI standard, these sizes should only
-    // be significant on the root process, but the boost::mpi
-    // wrapper seems to require them on all processes (Bug?) hence
-    // we use all_gather().
-    /*std::vector<int> sizes;
-    boost::mpi::all_gather(_comm,
-                       static_cast<int>(local_result.get_num_elements()),
-                       sizes);
-
-    boost::mpi::gatherv(_comm,
-                        local_result.data(),
-                        local_result.get_num_elements(),
-                        output.data(),
-                        sizes,
-                        environment::get_master_rank());*/
   }
 
   virtual ~distributed_volumetric_tomography(){}
 
-  const Scheduler& get_partitioning() const
+  const Partitioner& get_partitioning() const
   {
-    return _scheduler;
+    return _partitioner;
   }
 private:
-  boost::mpi::communicator _comm;
-  Scheduler _scheduler;
+
+  Partitioner _partitioner;
 };
 
 
@@ -955,11 +932,11 @@ public:
   {}
 
   template<class Tolerance_type>
-  void parallel_create_projection(Volumetric_reconstructor& reconstruction,
-                                  const reconstruction_quantity::quantity& reconstructed_quantity,
-                                  math::scalar z_range,
-                                  const Tolerance_type& integration_tolerance,
-                                  util::multi_array<device_scalar>& output) const
+  void create_projection(Volumetric_reconstructor& reconstruction,
+                         const reconstruction_quantity::quantity& reconstructed_quantity,
+                         math::scalar z_range,
+                         const Tolerance_type& integration_tolerance,
+                         util::multi_array<device_scalar>& output) const
   {
     output = util::multi_array<device_scalar>{_cam.get_num_pixels(0),
                                               _cam.get_num_pixels(1)};
@@ -995,7 +972,7 @@ public:
   }
 
   template<class Tolerance_type>
-  void create_projection(Volumetric_reconstructor& reconstruction,
+  void create_serial_projection(Volumetric_reconstructor& reconstruction,
                          const reconstruction_quantity::quantity& reconstructed_quantity,
                          math::scalar z_range,
                          const Tolerance_type& integration_tolerance,

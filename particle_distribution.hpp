@@ -27,13 +27,14 @@
 
 #include "async_io.hpp"
 #include "math.hpp"
+#include "coordinate_system.hpp"
 
 namespace illcrawl {
 
 class particle_distribution
 {
 public:
-  particle_distribution(const H5::DataSet& coordinates)
+  particle_distribution(const H5::DataSet& coordinates, const math::vector3& periodic_wraparound_size)
     : _distribution_center{{0.0,0.0,0.0}}, _distribution_size{{0.0,0.0,0.0}}
   {
     io::async_dataset_streamer<math::scalar> streamer{{coordinates}};
@@ -47,6 +48,9 @@ public:
       max_coordinates[i] = std::numeric_limits<math::scalar>::min();
     }
 
+    std::size_t num_processed_particles = 0;
+    math::vector3 estimated_center = {{0.0, 0.0, 0.0}};
+
     io::buffer_accessor<math::scalar> access = streamer.create_buffer_accessor();
     auto block_processor =
         [&](const io::async_dataset_streamer<math::scalar>::const_iterator& current_block)
@@ -56,13 +60,25 @@ public:
         access.select_dataset(0);
         math::vector3 coordinates;
         for(std::size_t j = 0; j < 3; ++j)
-        {
           coordinates[j] = access(current_block, i, j);
+
+        coordinate_system::correct_periodicity(periodic_wraparound_size,
+                                               estimated_center,
+                                               coordinates);
+
+        // Update center estimation
+        estimated_center = 1.0 / static_cast<math::scalar>(num_processed_particles + 1) * (
+              static_cast<math::scalar>(num_processed_particles) * estimated_center + coordinates);
+
+        for(std::size_t j = 0; j < 3; ++j)
+        {
           if(coordinates[j] > max_coordinates[j])
             max_coordinates[j] = coordinates[j];
           if(coordinates[j] < min_coordinates[j])
             min_coordinates[j] = coordinates[j];
         }
+
+        ++num_processed_particles;
       }
     };
 
@@ -73,10 +89,10 @@ public:
 
     _distribution_center = 0.5 * (min_coordinates + max_coordinates);
     _distribution_size = max_coordinates - min_coordinates;
-
+    _mean_particle_position = estimated_center;
   }
 
-  const math::vector3& get_distribution_center() const
+  const math::vector3& get_extent_center() const
   {
     return _distribution_center;
   }
@@ -86,9 +102,15 @@ public:
     return _distribution_size;
   }
 
+  const math::vector3& get_mean_particle_position() const
+  {
+    return _mean_particle_position;
+  }
+
 private:
   math::vector3 _distribution_center;
   math::vector3 _distribution_size;
+  math::vector3 _mean_particle_position;
 };
 
 }

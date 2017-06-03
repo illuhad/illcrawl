@@ -45,6 +45,28 @@ void correct_periodicity(const util::grid_coordinate_translator<N>& grid_transla
                       coordinates);
 }
 
+
+void correct_periodicity(const math::vector3& periodic_wraparound_size,
+                         const math::vector3& pivot,
+                         math::vector3& coordinates)
+{
+  for(std::size_t i = 0; i < 3; ++i)
+  {
+    math::vector3 candidate = coordinates;
+
+    candidate[i] = coordinates[i] + periodic_wraparound_size[i];
+    if(math::distance2(pivot, candidate) < math::distance2(pivot, coordinates))
+      coordinates[i] += periodic_wraparound_size[i];
+    else
+    {
+      candidate[i] = coordinates[i] - periodic_wraparound_size[i];
+      if(math::distance2(pivot, candidate) < math::distance2(pivot, coordinates))
+        coordinates[i] -= periodic_wraparound_size[i];
+    }
+
+  }
+}
+
 }
 }
 

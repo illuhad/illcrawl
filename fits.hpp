@@ -280,7 +280,7 @@ public:
     long lpixel [] = {
       static_cast<long>(data.get_extent_of_dimension(0)),
       static_cast<long>(data.get_extent_of_dimension(1)),
-      _partitioning.own_end()
+      static_cast<long>(_partitioning.own_end())
     };
 
     fits_write_subset(file,

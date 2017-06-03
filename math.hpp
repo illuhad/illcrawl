@@ -95,6 +95,8 @@ scalar dot(const vector_n<Dim>& a, const vector_n<Dim>& b)
   return result;
 }
 
+
+
 template<std::size_t Dim>
 vector_n<Dim> normalize(const vector_n<Dim>& v)
 {
@@ -246,7 +248,17 @@ math::vector_n<Dim> operator*(const math::scalar b, const math::vector_n<Dim>& a
   return a * b;
 }
 
+namespace math {
+template<std::size_t Dim>
+inline scalar distance2(const vector_n<Dim>& a, const vector_n<Dim>& b)
+{
+  vector_n<Dim> R = a;
+  R -= b;
 
+  return dot(R,R);
+}
+
+} // math
 
 
 }

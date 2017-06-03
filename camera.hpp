@@ -38,31 +38,10 @@ public:
     : _position(position),
       _look_at(look_at),
       _pixel_size{screen_width/static_cast<math::scalar>(num_pix_x)},
-      _num_pixels{{num_pix_x, num_pix_y}}
+      _num_pixels{{num_pix_x, num_pix_y}},
+      _roll_angle{roll_angle}
   {
-    // Calculate screen basis vectors
-    math::vector3 v1 {{0, 0, 1}};
-
-    if (_look_at[0] == v1[0] &&
-        _look_at[1] == v1[1] &&
-        _look_at[2] == v1[2])
-    {
-      v1 = {{0, 1, 0}};
-    }
-
-    v1 = math::cross(v1, _look_at);
-    math::vector3 v2 = math::cross(_look_at, v1);
-
-    math::matrix3x3 roll_matrix;
-    math::matrix_create_rotation_matrix(&roll_matrix, _look_at, roll_angle);
-
-    // Normalize vectors in case of rounding errors
-    this->_screen_basis_vector0 =
-        math::normalize(math::matrix_vector_mult(roll_matrix, v1));
-
-    this->_screen_basis_vector1 =
-        math::normalize(math::matrix_vector_mult(roll_matrix, v2));
-
+    update_basis_vectors();
     update_min_position();
   }
 
@@ -116,6 +95,15 @@ public:
     update_min_position();
   }
 
+  /// \param look_at A normalized vector indicating the
+  /// direction in which the camera 'looks'
+  void set_look_at(const math::vector3& look_at)
+  {
+    this->_look_at = look_at;
+    update_basis_vectors();
+    update_min_position();
+  }
+
   const math::vector3& get_screen_min_position() const
   {
     return _min_position;
@@ -123,6 +111,32 @@ public:
 
 
 private:
+  void update_basis_vectors()
+  {
+    // Calculate screen basis vectors
+    math::vector3 v1 {{0, 0, 1}};
+
+    if (_look_at[0] == v1[0] &&
+        _look_at[1] == v1[1] &&
+        _look_at[2] == v1[2])
+    {
+      v1 = {{0, 1, 0}};
+    }
+
+    v1 = math::cross(v1, _look_at);
+    math::vector3 v2 = math::cross(_look_at, v1);
+
+    math::matrix3x3 roll_matrix;
+    math::matrix_create_rotation_matrix(&roll_matrix, _look_at, _roll_angle);
+
+    // Normalize vectors in case of rounding errors
+    this->_screen_basis_vector0 =
+        math::normalize(math::matrix_vector_mult(roll_matrix, v1));
+
+    this->_screen_basis_vector1 =
+        math::normalize(math::matrix_vector_mult(roll_matrix, v2));
+  }
+
   void update_min_position()
   {
     _min_position = _position;
@@ -141,6 +155,8 @@ private:
   std::array<std::size_t, 2> _num_pixels;
 
   math::vector3 _min_position;
+
+  math::scalar _roll_angle;
 };
 
 }
