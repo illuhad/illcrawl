@@ -84,6 +84,7 @@ protected:
     {
       _stepper(i, total_frame_range, _cam);
       _renderer(_cam, frame);
+
       assert(frame.get_extent_of_dimension(0) == _cam.get_num_pixels(0));
       assert(frame.get_extent_of_dimension(1) == _cam.get_num_pixels(1));
 
@@ -155,7 +156,6 @@ public:
   {
     math::scalar angle_per_frame = _rotation_range / static_cast<math::scalar>(num_frames);
 
-
     math::matrix3x3 rotation_matrix;
     math::matrix_create_rotation_matrix(&rotation_matrix,
                                         _rotation_axis,
@@ -186,8 +186,8 @@ public:
 private:
   math::vector3 _rotation_center;
   math::vector3 _rotation_axis;
-  math::scalar _rotation_range;
-  camera _initial_camera;
+  const math::scalar _rotation_range;
+  const camera _initial_camera;
 };
 
 class dual_axis_rotation_around_point
@@ -202,6 +202,7 @@ public:
                                    math::scalar rotation_range_phi_degree = 360.0,
                                    math::scalar rotation_range_theta_degree = 360.0)
   : _rotation_around_point{center, initial_axis, cam, rotation_range_phi_degree},
+    _initial_axis(initial_axis),
     _theta_axis(theta_axis),
     _theta_rotation_range{(2.0 * M_PI / 360.0) * rotation_range_theta_degree}
   {}
@@ -215,8 +216,7 @@ public:
                                         _theta_axis,
                                         frame_id * angle_per_frame);
 
-    math::vector3 rotation_axis = _rotation_around_point.get_rotation_axis();
-    _rotation_around_point.set_rotation_axis(math::matrix_vector_mult(rotation_matrix, rotation_axis));
+    _rotation_around_point.set_rotation_axis(math::matrix_vector_mult(rotation_matrix, _initial_axis));
 
     _rotation_around_point(frame_id, num_frames, cam);
   }
@@ -224,7 +224,8 @@ public:
 private:
   rotation_around_point _rotation_around_point;
 
-  math::vector3 _theta_axis;
+  const math::vector3 _initial_axis;
+  const math::vector3 _theta_axis;
   math::scalar _theta_rotation_range;
 };
 

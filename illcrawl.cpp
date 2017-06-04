@@ -342,7 +342,7 @@ int main(int argc, char** argv)
     cam
   };
 
-  animation(500, result);
+  animation(1000, result);
 
   //illcrawl::volumetric_integration<illcrawl::volumetric_nn8_reconstruction> integrator{ctx, cam};
   //integrator.parallel_create_projection(reconstructor, *chandra_xray_emission, 1000.0,
