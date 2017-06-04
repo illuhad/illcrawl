@@ -317,7 +317,8 @@ int main(int argc, char** argv)
     distribution_center,
     illcrawl::math::vector3{{0,0,1}}, // initial phi axis
     illcrawl::math::vector3{{1,0,0}}, // theta axis
-    360.0, // phi range
+    cam,
+    10.0 * 360.0, // phi range
     360.0  // theta range
   };
 
@@ -341,7 +342,7 @@ int main(int argc, char** argv)
     cam
   };
 
-  animation(100, result);
+  animation(500, result);
 
   //illcrawl::volumetric_integration<illcrawl::volumetric_nn8_reconstruction> integrator{ctx, cam};
   //integrator.parallel_create_projection(reconstructor, *chandra_xray_emission, 1000.0,

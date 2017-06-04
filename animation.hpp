@@ -142,10 +142,12 @@ public:
 
   rotation_around_point(const math::vector3& center,
                         const math::vector3& axis,
+                        const camera& cam,
                         math::scalar rotation_range_degree = 360.0)
     : _rotation_center(center),
       _rotation_axis(axis),
-      _rotation_range{(2.0 * M_PI / 360.0) * rotation_range_degree}
+      _rotation_range{(2.0 * M_PI / 360.0) * rotation_range_degree},
+      _initial_camera{cam}
   {
   }
 
@@ -153,19 +155,20 @@ public:
   {
     math::scalar angle_per_frame = _rotation_range / static_cast<math::scalar>(num_frames);
 
+
     math::matrix3x3 rotation_matrix;
     math::matrix_create_rotation_matrix(&rotation_matrix,
                                         _rotation_axis,
                                         frame_id * angle_per_frame);
 
     // Calculate new camera position
-    math::vector3 pos = cam.get_position();
+    math::vector3 pos = _initial_camera.get_position();
     math::vector3 R = pos - _rotation_center;
     math::vector3 R_prime = math::matrix_vector_mult(rotation_matrix, R);
     cam.set_position(_rotation_center + R_prime);
 
     // Calculate new look_at vector
-    math::vector3 look_at = cam.get_look_at();
+    math::vector3 look_at = _initial_camera.get_look_at();
     cam.set_look_at(math::matrix_vector_mult(rotation_matrix, look_at));
   }
 
@@ -184,6 +187,7 @@ private:
   math::vector3 _rotation_center;
   math::vector3 _rotation_axis;
   math::scalar _rotation_range;
+  camera _initial_camera;
 };
 
 class dual_axis_rotation_around_point
@@ -194,9 +198,10 @@ public:
                                    // The rotation axis will itself be rotated around the theta
                                    // axis
                                    const math::vector3& theta_axis,
+                                   const camera& cam,
                                    math::scalar rotation_range_phi_degree = 360.0,
                                    math::scalar rotation_range_theta_degree = 360.0)
-  : _rotation_around_point{center, initial_axis, rotation_range_phi_degree},
+  : _rotation_around_point{center, initial_axis, cam, rotation_range_phi_degree},
     _theta_axis(theta_axis),
     _theta_rotation_range{(2.0 * M_PI / 360.0) * rotation_range_theta_degree}
   {}
