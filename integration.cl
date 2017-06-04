@@ -76,7 +76,7 @@ void rkf_advance(scalar* integration_state,
     scalar absolute_tolerance = tolerance;
 
     if(is_relative_tolerance)
-      absolute_tolerance = *integration_state / (*current_position) * tolerance;
+      absolute_tolerance = fabs(*integration_state / (*current_position) * tolerance);
 
     s = pow(absolute_tolerance * (*current_step_size) / (2.f * error), 0.25f);
   }

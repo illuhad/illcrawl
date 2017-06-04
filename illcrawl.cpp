@@ -309,7 +309,7 @@ int main(int argc, char** argv)
   // Create tomography on the master rank
   //tomography.create_tomographic_cube(reconstructor, *chandra_xray_emission, 1000.0, result);
 
-  illcrawl::integration::relative_tolerance<illcrawl::math::scalar> tol{1.e-2};
+  illcrawl::integration::absolute_tolerance<illcrawl::math::scalar> tol{10.0};
 
 
   illcrawl::camera_movement::dual_axis_rotation_around_point
@@ -324,7 +324,7 @@ int main(int argc, char** argv)
   illcrawl::animation_frame::integrated_projection
   <
     illcrawl::volumetric_nn8_reconstruction,
-    illcrawl::integration::relative_tolerance<illcrawl::math::scalar>
+    illcrawl::integration::absolute_tolerance<illcrawl::math::scalar>
   > frame_renderer {
     env.get_compute_device(),
     *chandra_xray_emission, // reconstructed quantity
