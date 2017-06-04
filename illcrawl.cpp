@@ -357,6 +357,7 @@ int main(int argc, char** argv)
   for(std::size_t i = 0; i < temperature_result.get_num_elements(); ++i)
     result.data()[i] = temperature_result.data()[i] / result.data()[i];*/
 
+  master_cout << "Saving result..." << std::endl;
 
   illcrawl::util::distributed_fits_slices<illcrawl::uniform_work_partitioner, device_scalar>
       result_file{animation.get_partitioning(), "illcrawl_render.fits"};
