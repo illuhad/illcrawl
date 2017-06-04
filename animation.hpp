@@ -140,26 +140,43 @@ namespace camera_movement {
 class rotation_around_point
 {
 public:
+  using rotation_matrix_creator = std::function<math::matrix3x3 (math::scalar alpha)>;
+
+  rotation_around_point(const math::vector3& center,
+                        const camera& cam,
+                        rotation_matrix_creator matrix_creator,
+                        math::scalar rotation_range_degree = 360.0)
+    : _rotation_center(center),
+      _rotation_range{(2.0 * M_PI / 360.0) * rotation_range_degree},
+      _initial_camera{cam},
+      _rotation_creator{matrix_creator}
+  {
+  }
+
 
   rotation_around_point(const math::vector3& center,
                         const math::vector3& axis,
                         const camera& cam,
                         math::scalar rotation_range_degree = 360.0)
     : _rotation_center(center),
-      _rotation_axis(axis),
       _rotation_range{(2.0 * M_PI / 360.0) * rotation_range_degree},
       _initial_camera{cam}
   {
+    _rotation_creator = [axis](math::scalar alpha) -> math::matrix3x3
+    {
+      math::matrix3x3 rotation;
+      math::matrix_create_rotation_matrix(&rotation,
+                                          axis,
+                                          alpha);
+      return rotation;
+    };
   }
 
   void operator()(std::size_t frame_id, std::size_t num_frames, camera& cam) const
   {
     math::scalar angle_per_frame = _rotation_range / static_cast<math::scalar>(num_frames);
 
-    math::matrix3x3 rotation_matrix;
-    math::matrix_create_rotation_matrix(&rotation_matrix,
-                                        _rotation_axis,
-                                        frame_id * angle_per_frame);
+    math::matrix3x3 rotation_matrix = _rotation_creator(frame_id * angle_per_frame);
 
     // Calculate new camera position
     math::vector3 pos = _initial_camera.get_position();
@@ -172,22 +189,18 @@ public:
     cam.set_look_at(math::matrix_vector_mult(rotation_matrix, look_at));
   }
 
-
-  const math::vector3& get_rotation_axis() const
+  void set_rotation_matrix_creator(rotation_matrix_creator creator)
   {
-    return _rotation_axis;
-  }
-
-  void set_rotation_axis(const math::vector3& axis)
-  {
-    _rotation_axis = axis;
+    _rotation_creator = creator;
   }
 
 private:
   math::vector3 _rotation_center;
-  math::vector3 _rotation_axis;
+
   const math::scalar _rotation_range;
   const camera _initial_camera;
+
+  rotation_matrix_creator _rotation_creator;
 };
 
 class dual_axis_rotation_around_point
@@ -199,19 +212,37 @@ public:
                                    const camera& cam,
                                    math::scalar rotation_range_phi_degree = 360.0,
                                    math::scalar rotation_range_theta_degree = 360.0)
-  : _phi_rotation{center, phi_axis, cam, rotation_range_phi_degree},
-    _theta_rotation{center, theta_axis, cam, rotation_range_theta_degree}
-  {}
+  : _rotation{center, phi_axis, cam, rotation_range_phi_degree}
+  {
+    auto rotation_creator =
+    [phi_axis, theta_axis, rotation_range_phi_degree, rotation_range_theta_degree](math::scalar alpha_phi)
+    {
+      math::scalar alpha_theta = alpha_phi * (rotation_range_theta_degree / rotation_range_phi_degree);
+      return generate_rotation_matrix(alpha_phi, alpha_theta, phi_axis, theta_axis);
+    };
+
+    _rotation.set_rotation_matrix_creator(rotation_creator);
+  }
 
   void operator()(std::size_t frame_id, std::size_t num_frames, camera& cam)
   {
-    _phi_rotation(frame_id, num_frames, cam);
-    _theta_rotation(frame_id, num_frames, cam);
+    _rotation(frame_id, num_frames, cam);
   }
 
 private:
-  rotation_around_point _phi_rotation;
-  rotation_around_point _theta_rotation;
+  static math::matrix3x3 generate_rotation_matrix(math::scalar alpha_phi,
+                                                  math::scalar alpha_theta,
+                                                  const math::vector3& phi_axis,
+                                                  const math::vector3& theta_axis)
+  {
+    math::matrix3x3 M_phi, M_theta;
+    math::matrix_create_rotation_matrix(&M_phi, phi_axis, alpha_phi);
+    math::matrix_create_rotation_matrix(&M_theta, theta_axis, alpha_theta);
+
+    return math::matrix_matrix_mult(M_phi, M_theta);
+  }
+
+  rotation_around_point _rotation;
 };
 
 } // camera_movement

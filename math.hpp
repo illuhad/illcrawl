@@ -163,6 +163,29 @@ vector3 matrix_vector_mult(const matrix3x3& m, const vector3& v)
   return result;
 }
 
+inline static
+matrix3x3 matrix_matrix_mult(const matrix3x3& A, const matrix3x3& B)
+{
+  matrix3x3 result;
+  vector3 B_column0 = VECTOR3(VECTOR3_X(B.row0), VECTOR3_X(B.row1), VECTOR3_X(B.row2));
+  vector3 B_column1 = VECTOR3(VECTOR3_Y(B.row0), VECTOR3_Y(B.row1), VECTOR3_Y(B.row2));
+  vector3 B_column2 = VECTOR3(VECTOR3_Z(B.row0), VECTOR3_Z(B.row1), VECTOR3_Z(B.row2));
+
+  VECTOR3_X(result.row0) = dot(A.row0, B_column0);
+  VECTOR3_Y(result.row0) = dot(A.row0, B_column1);
+  VECTOR3_Z(result.row0) = dot(A.row0, B_column2);
+
+  VECTOR3_X(result.row1) = dot(A.row1, B_column0);
+  VECTOR3_Y(result.row1) = dot(A.row1, B_column1);
+  VECTOR3_Z(result.row1) = dot(A.row1, B_column2);
+
+  VECTOR3_X(result.row2) = dot(A.row2, B_column0);
+  VECTOR3_Y(result.row2) = dot(A.row2, B_column1);
+  VECTOR3_Z(result.row2) = dot(A.row2, B_column2);
+
+  return result;
+}
+
 namespace geometry {
 
 inline bool is_within_range(scalar x, scalar min, scalar max)
