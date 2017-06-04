@@ -194,39 +194,24 @@ class dual_axis_rotation_around_point
 {
 public:
   dual_axis_rotation_around_point(const math::vector3& center,
-                                   const math::vector3& initial_axis,
-                                   // The rotation axis will itself be rotated around the theta
-                                   // axis
+                                   const math::vector3& phi_axis,
                                    const math::vector3& theta_axis,
                                    const camera& cam,
                                    math::scalar rotation_range_phi_degree = 360.0,
                                    math::scalar rotation_range_theta_degree = 360.0)
-  : _rotation_around_point{center, initial_axis, cam, rotation_range_phi_degree},
-    _initial_axis(initial_axis),
-    _theta_axis(theta_axis),
-    _theta_rotation_range{(2.0 * M_PI / 360.0) * rotation_range_theta_degree}
+  : _phi_rotation{center, phi_axis, cam, rotation_range_phi_degree},
+    _theta_rotation{center, theta_axis, cam, rotation_range_theta_degree}
   {}
 
   void operator()(std::size_t frame_id, std::size_t num_frames, camera& cam)
   {
-    math::scalar angle_per_frame = _theta_rotation_range / static_cast<math::scalar>(num_frames);
-
-    math::matrix3x3 rotation_matrix;
-    math::matrix_create_rotation_matrix(&rotation_matrix,
-                                        _theta_axis,
-                                        frame_id * angle_per_frame);
-
-    _rotation_around_point.set_rotation_axis(math::matrix_vector_mult(rotation_matrix, _initial_axis));
-
-    _rotation_around_point(frame_id, num_frames, cam);
+    _phi_rotation(frame_id, num_frames, cam);
+    _theta_rotation(frame_id, num_frames, cam);
   }
 
 private:
-  rotation_around_point _rotation_around_point;
-
-  const math::vector3 _initial_axis;
-  const math::vector3 _theta_axis;
-  math::scalar _theta_rotation_range;
+  rotation_around_point _phi_rotation;
+  rotation_around_point _theta_rotation;
 };
 
 } // camera_movement
