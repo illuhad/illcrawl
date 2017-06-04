@@ -316,9 +316,9 @@ int main(int argc, char** argv)
   camera_mover{
     distribution_center,
     illcrawl::math::vector3{{0,0,1}}, // initial phi axis
-    illcrawl::math::vector3{{1,0,0}}, // theta axis
+    illcrawl::math::vector3{{0,1,0}}, // theta axis
     cam,
-    10.0 * 360.0, // phi range
+    2.7 * 360.0, // phi range
     360.0  // theta range
   };
 
