@@ -42,7 +42,10 @@ set(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} ${MPI_CXX_COMPILE_FLAGS})
 include_directories(${PROJECT_BINARY_DIR} ${OpenCL_INCLUDE_DIRS} ${HDF5_INCLUDE_DIRS} ${Boost_INCLUDE_DIR} ${MPI_C_INCLUDE_PATH})
 
 add_executable(illcrawl illcrawl.cpp chandra.cpp)
+add_executable(illcrawl_extract_fits_slice illcrawl_extract_fits_slice.cpp)
+
 target_link_libraries (illcrawl ${MPI_CXX_LINK_FLAGS} ${MPI_CXX_LIBRARIES} ${OpenCL_LIBRARIES} ${HDF5_CXX_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT}  ${Boost_MPI_LIBRARY} ${Boost_SERIALIZATION_LIBRARY} cfitsio)
+target_link_libraries (illcrawl_extract_fits_slice ${OpenCL_LIBRARIES} cfitsio)
 # Copy CL sources
 add_custom_command(TARGET illcrawl POST_BUILD
                   COMMAND ${CMAKE_COMMAND} -E copy
