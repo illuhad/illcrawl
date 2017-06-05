@@ -178,15 +178,10 @@ public:
 
     math::matrix3x3 rotation_matrix = _rotation_creator(frame_id * angle_per_frame);
 
-    // Calculate new camera position
-    math::vector3 pos = _initial_camera.get_position();
-    math::vector3 R = pos - _rotation_center;
-    math::vector3 R_prime = math::matrix_vector_mult(rotation_matrix, R);
-    cam.set_position(_rotation_center + R_prime);
-
-    // Calculate new look_at vector
-    math::vector3 look_at = _initial_camera.get_look_at();
-    cam.set_look_at(math::matrix_vector_mult(rotation_matrix, look_at));
+    // Reset camera to initial animation state
+    cam = _initial_camera;
+    // Now apply rotation to current state
+    cam.rotate(rotation_matrix, _rotation_center);
   }
 
   void set_rotation_matrix_creator(rotation_matrix_creator creator)

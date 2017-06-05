@@ -109,6 +109,23 @@ public:
     return _min_position;
   }
 
+  void rotate(const math::matrix3x3& rotation_matrix,
+              const math::vector3& rotation_center)
+  {
+    math::vector3 R = _position - rotation_center;
+    math::vector3 R_prime = math::matrix_vector_mult(rotation_matrix, R);
+    this->_position = R_prime + rotation_center;
+
+    this->_look_at = math::matrix_vector_mult(rotation_matrix, _look_at);
+
+    this->_screen_basis_vector0 =
+                     math::matrix_vector_mult(rotation_matrix, _screen_basis_vector0);
+    this->_screen_basis_vector1 =
+                     math::matrix_vector_mult(rotation_matrix, _screen_basis_vector1);
+
+    update_min_position();
+  }
+
 
 private:
   void update_basis_vectors()

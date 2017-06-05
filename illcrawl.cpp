@@ -318,7 +318,7 @@ int main(int argc, char** argv)
     illcrawl::math::vector3{{0,0,1}}, // initial phi axis
     illcrawl::math::vector3{{0,1,0}}, // theta axis
     cam,
-    2.7 * 360.0, // phi range
+    3.0 * 360.0, // phi range
     360.0  // theta range
   };
 
