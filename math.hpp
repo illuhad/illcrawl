@@ -25,7 +25,6 @@
 #include <array>
 #include <cmath>
 
-#include "types.hpp"
 
 #ifndef __OPENCL_VERSION__
 #define VECTOR3_X(vector) (vector[0])
@@ -42,6 +41,7 @@
 namespace illcrawl {
 namespace math {
 
+inline static
 std::size_t make_multiple_of(std::size_t n, std::size_t value)
 {
   std::size_t result = (value / n) * n;
@@ -60,22 +60,6 @@ using vector_n = std::array<scalar, Dim>;
 using vector3 = vector_n<3>;
 using vector2 = vector_n<2>;
 
-inline
-device_vector3 to_device_vector3(const math::vector3& v)
-{
-  return device_vector3{{static_cast<device_scalar>(v[0]),
-                         static_cast<device_scalar>(v[1]),
-                         static_cast<device_scalar>(v[2])}};
-}
-
-inline
-device_vector4 to_device_vector4(const math::vector3& v)
-{
-  return device_vector4{{static_cast<device_scalar>(v[0]),
-                         static_cast<device_scalar>(v[1]),
-                         static_cast<device_scalar>(v[2]),
-                         device_scalar{}}};
-}
 
 struct matrix3x3
 {

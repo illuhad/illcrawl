@@ -24,6 +24,8 @@
 #include "qcl.hpp"
 #include <boost/compute.hpp>
 
+#include "math.hpp"
+
 namespace illcrawl {
 
 using device_scalar  = cl_float;
@@ -35,6 +37,27 @@ using device_vector8 = cl_float8;
 using boost_device_vector2 = boost::compute::float2_;
 using boost_device_vector4 = boost::compute::float4_;
 using boost_device_vector8 = boost::compute::float8_;
+
+namespace math {
+
+inline
+device_vector3 to_device_vector3(const math::vector3& v)
+{
+  return device_vector3{{static_cast<device_scalar>(v[0]),
+                         static_cast<device_scalar>(v[1]),
+                         static_cast<device_scalar>(v[2])}};
+}
+
+inline
+device_vector4 to_device_vector4(const math::vector3& v)
+{
+  return device_vector4{{static_cast<device_scalar>(v[0]),
+                         static_cast<device_scalar>(v[1]),
+                         static_cast<device_scalar>(v[2]),
+                         device_scalar{}}};
+}
+
+}
 
 }
 

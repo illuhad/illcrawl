@@ -25,6 +25,7 @@
 #include <cassert>
 #include <vector>
 
+#include "cl_types.hpp"
 #include "math.hpp"
 #include "hdf5_io.hpp"
 #include "qcl.hpp"

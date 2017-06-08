@@ -315,8 +315,8 @@ int main(int argc, char** argv)
   illcrawl::camera_movement::dual_axis_rotation_around_point
   camera_mover{
     distribution_center,
-    illcrawl::math::vector3{{0,0,1}}, // initial phi axis
-    illcrawl::math::vector3{{0,1,0}}, // theta axis
+    illcrawl::math::vector3{{0,1,0}}, // initial phi axis
+    illcrawl::math::vector3{{1,0,0}}, // theta axis
     cam,
     3.0 * 360.0, // phi range
     360.0  // theta range

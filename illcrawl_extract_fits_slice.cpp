@@ -22,7 +22,7 @@
 #include <iostream>
 #define WITHOUT_MPI
 #include "fits.hpp"
-#include "types.hpp"
+#include "cl_types.hpp"
 #include "multi_array.hpp"
 
 void usage()

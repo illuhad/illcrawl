@@ -1,3 +1,24 @@
+/*
+ * This file is part of illcrawl, a reconstruction engine for data from
+ * the illustris simulation.
+ *
+ * Copyright (C) 2017  Aksel Alpay
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+
 #ifndef HDF5_IO_HPP
 #define HDF5_IO_HPP
 
@@ -7,7 +28,9 @@
 #include <H5Cpp.h>
 #include <array>
 #include <algorithm>
+#include <map>
 
+#include "multi_array.hpp"
 #include "io_iterator.hpp"
 
 namespace illcrawl{
@@ -151,6 +174,103 @@ DEFINE_HDF5_PRED_DATA_TYPE(float, H5::PredType::NATIVE_FLOAT);
 DEFINE_HDF5_PRED_DATA_TYPE(double, H5::PredType::NATIVE_DOUBLE);
 DEFINE_HDF5_PRED_DATA_TYPE(long double, H5::PredType::NATIVE_LDOUBLE);
 
+template<class T>
+class hdf5_writer
+{
+public:
+  hdf5_writer(const std::string& filename)
+    : _filename{filename}, _file{filename, H5F_ACC_TRUNC}
+  {}
+
+  void add_group(const std::string& group_name, std::size_t size_hint = 0)
+  {
+    _groups[group_name] = _file.createGroup(group_name, size_hint);
+  }
+
+  H5::Group get_group(const std::string& group_name) const
+  {
+    return _groups.at(group_name);
+  }
+
+  void ensure_group_exists(const std::string& group_name, std::size_t size_hint = 0)
+  {
+    if(_groups.find(group_name) == _groups.end())
+      add_group(group_name, size_hint);
+  }
+
+  H5::DataSet create_dataset(const std::string& group_name,
+                             const std::string& dataset_name,
+                             const std::vector<hsize_t>& shape)
+  {
+    ensure_group_exists(group_name);
+
+    assert(shape.size() > 0);
+
+    H5::DataSpace dataspace{
+      static_cast<int>(shape.size()),
+      shape.data()
+    };
+
+
+    H5::DataSet dataset = _groups[group_name].createDataSet(
+          dataset_name,
+          hdf5_pred_data_type<T>::value(),
+          dataspace);
+
+    return dataset;
+  }
+
+  void add_dataset(const std::string& group_name,
+                   const std::string& dataset_name,
+                   const std::vector<T>& data)
+  {
+    std::vector<hsize_t> shape = {static_cast<hsize_t>(data.size())};
+    H5::DataSet dset = create_dataset(group_name, dataset_name, shape);
+
+    if(data.size())
+      dset.write(data.data(), hdf5_pred_data_type<T>::value());
+  }
+
+  void add_dataset(const std::string& group_name,
+                   const std::string& dataset_name,
+                   const std::vector<hsize_t>& shape,
+                   const std::vector<T>& data)
+  {
+    std::cout << "shape: ";
+    for(std::size_t i = 0; i < shape.size(); ++i)
+      std::cout << shape[i] << " ";
+    std::cout << std::endl;
+
+    std::cout << "data length " << data.size() << std::endl;
+
+    H5::DataSet dset = create_dataset(group_name, dataset_name, shape);
+
+    if(data.size())
+      dset.write(data.data(), hdf5_pred_data_type<T>::value());
+  }
+
+  void add_dataset(const std::string& group_name,
+                   const std::string& dataset_name,
+                   const util::multi_array<T>& data)
+  {
+    std::vector<hsize_t> shape;
+    for(std::size_t i = 0; i < data.get_dimension(); ++i)
+      shape.push_back(static_cast<hsize_t>(data.get_extent_of_dimension(i)));
+
+    H5::DataSet dset = create_dataset(group_name, dataset_name, shape);
+
+    if(data.size())
+      dset.write(data.data(), hdf5_pred_data_type<T>::value());
+  }
+
+private:
+  std::string _filename;
+
+  H5::H5File _file;
+
+  std::map<std::string, H5::Group> _groups;
+};
+
 
 template<class Data_type>
 class buffer_accessor
@@ -197,12 +317,6 @@ public:
     return (*this)(*iter, iter.get_num_available_rows(), row, col);
   }
 
-private:
-  std::size_t _dataset_id;
-
-  std::size_t _total_row_size;
-  std::vector<std::vector<hsize_t>> _extents;
-
   inline
   std::size_t get_dataset_row_size(std::size_t dataset_id) const
   {
@@ -212,6 +326,25 @@ private:
 
     return row_size;
   }
+
+  std::size_t get_num_datasets() const
+  {
+    return _extents.size();
+  }
+
+  const std::vector<hsize_t>& get_dataset_shape(std::size_t dataset_id) const
+  {
+    assert(dataset_id < _extents.size());
+    return _extents[dataset_id];
+  }
+
+private:
+  std::size_t _dataset_id;
+
+  std::size_t _total_row_size;
+  std::vector<std::vector<hsize_t>> _extents;
+
+
 
   std::vector<std::size_t> _row_size_subsums;
 };

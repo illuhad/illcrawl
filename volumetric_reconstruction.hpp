@@ -30,6 +30,7 @@
 #include <boost/mpi.hpp>
 
 #include "qcl.hpp"
+#include "cl_types.hpp"
 #include "math.hpp"
 #include "async_io.hpp"
 #include "quantity.hpp"

@@ -27,7 +27,7 @@
 #include <algorithm>
 
 #include "qcl.hpp"
-#include "types.hpp"
+#include "cl_types.hpp"
 
 namespace illcrawl {
 namespace util {

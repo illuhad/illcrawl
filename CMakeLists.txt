@@ -35,7 +35,7 @@ find_package(Threads REQUIRED)
 find_package(Boost
   1.61      # Minimum or EXACT version e.g. 1.36.0
   REQUIRED             # Faiil with error if Boost is not found
-  mpi serialization)
+  mpi serialization program_options)
 
 set(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} ${MPI_CXX_COMPILE_FLAGS})
 
@@ -43,9 +43,11 @@ include_directories(${PROJECT_BINARY_DIR} ${OpenCL_INCLUDE_DIRS} ${HDF5_INCLUDE_
 
 add_executable(illcrawl illcrawl.cpp chandra.cpp)
 add_executable(illcrawl_extract_fits_slice illcrawl_extract_fits_slice.cpp)
+add_executable(illcrawl_filter_snapshot illcrawl_filter_snapshot.cpp)
 
 target_link_libraries (illcrawl ${MPI_CXX_LINK_FLAGS} ${MPI_CXX_LIBRARIES} ${OpenCL_LIBRARIES} ${HDF5_CXX_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT}  ${Boost_MPI_LIBRARY} ${Boost_SERIALIZATION_LIBRARY} cfitsio)
 target_link_libraries (illcrawl_extract_fits_slice ${OpenCL_LIBRARIES} cfitsio)
+target_link_libraries (illcrawl_filter_snapshot  ${CMAKE_THREAD_LIBS_INIT} ${HDF5_CXX_LIBRARIES} ${Boost_PROGRAM_OPTIONS_LIBRARY})
 # Copy CL sources
 add_custom_command(TARGET illcrawl POST_BUILD
                   COMMAND ${CMAKE_COMMAND} -E copy

@@ -25,6 +25,7 @@
 #include <vector>
 #include <array>
 
+#include "cl_types.hpp"
 #include "math.hpp"
 #include "qcl.hpp"
 

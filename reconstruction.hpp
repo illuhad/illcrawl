@@ -27,6 +27,7 @@
 #include <iostream>
 #include <functional>
 
+#include "cl_types.hpp"
 #include "async_io.hpp"
 #include "multi_array.hpp"
 #include "grid.hpp"
