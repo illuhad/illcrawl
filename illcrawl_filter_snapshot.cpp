@@ -25,6 +25,7 @@
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string.hpp>
 
+#define WITHOUT_MPI
 #include "hdf5_io.hpp"
 #include "async_io.hpp"
 #include "coordinate_system.hpp"
