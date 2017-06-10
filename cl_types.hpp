@@ -40,6 +40,7 @@ using boost_device_vector8 = boost::compute::float8_;
 
 namespace math {
 
+/// Converts a \c math::vector3 to a 3-component OpenCL vector type.
 inline
 device_vector3 to_device_vector3(const math::vector3& v)
 {
@@ -48,6 +49,8 @@ device_vector3 to_device_vector3(const math::vector3& v)
                          static_cast<device_scalar>(v[2])}};
 }
 
+/// Converts a \c math::vector3 to a 4-component OpenCL vector type.
+/// The last component of the result is set to 0.
 inline
 device_vector4 to_device_vector4(const math::vector3& v)
 {

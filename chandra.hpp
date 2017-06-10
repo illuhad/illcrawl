@@ -29,6 +29,7 @@ namespace chandra {
 /// Cycle 19 chandra area response function
 class arf : public util::tabulated_function{
 public:
+  /// \param ctx The OpenCL context
   arf(const qcl::device_context_ptr& ctx);
   virtual ~arf(){}
 };

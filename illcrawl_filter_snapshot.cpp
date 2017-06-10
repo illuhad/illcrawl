@@ -25,7 +25,7 @@
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string.hpp>
 
-#define WITHOUT_MPI
+
 #include "hdf5_io.hpp"
 #include "async_io.hpp"
 #include "coordinate_system.hpp"
@@ -68,18 +68,9 @@ private:
   illcrawl::math::scalar _radius;
 };
 
-class selection_handler
-{
-public:
-  virtual ~selection_handler(){}
 
-  virtual void operator()(illcrawl::io::buffer_accessor<illcrawl::math::scalar>& access,
-                          const illcrawl::io::async_dataset_streamer<illcrawl::math::scalar>::const_iterator&
-                            current_block,
-                          std::size_t selected_row) = 0;
-};
 
-class selected_particle_storage : public selection_handler
+class selected_particle_storage
 {
 public:
   selected_particle_storage(const std::vector<std::string>& field_names)
@@ -88,13 +79,12 @@ public:
       _dataset_shapes(field_names.size() + 1)
   {}
 
-  virtual ~selected_particle_storage(){}
+  ~selected_particle_storage(){}
 
-  virtual
   void operator()(illcrawl::io::buffer_accessor<illcrawl::math::scalar>& access,
                   const illcrawl::io::async_dataset_streamer<illcrawl::math::scalar>::const_iterator&
                     current_block,
-                  std::size_t selected_row) override
+                  std::size_t selected_row)
   {
     assert(_stored_datasets.size() == access.get_num_datasets());
 
@@ -136,11 +126,22 @@ public:
       if(i != 0)
         field_name = _field_names[i - 1];
 
-      writer.add_dataset(group, field_name, _dataset_shapes[i], _stored_datasets[i]);
+      std::vector<hsize_t> shape = _dataset_shapes[i];
+      if(shape.size() == 0)
+        shape.push_back(0);
+
+      writer.add_dataset(group, field_name, shape, _stored_datasets[i]);
     }
 
   }
 
+  std::size_t get_num_stored_particles() const
+  {
+    std::size_t num_particles = 0;
+    if(_stored_datasets.size() > 0)
+      num_particles = _stored_datasets.front().size();
+    return num_particles;
+  }
 private:
   std::vector<std::string> _field_names;
   std::vector<std::vector<illcrawl::math::scalar>> _stored_datasets;
@@ -150,12 +151,13 @@ private:
 class filter
 {
 public:
-  using selector_list = std::vector<std::pair<selector*,selection_handler*>>;
+  using selector_list = std::vector<std::pair<selector*,selected_particle_storage*>>;
 
   filter(const std::vector<std::string>& included_fields,
          const selector_list& selectors)
     : _included_fields(included_fields),
-      _selectors(selectors)
+      _selectors(selectors),
+      _num_selected_particles{0}
   {
   }
 
@@ -217,15 +219,20 @@ public:
           if((*selector_handler_pair.first)(coordinates))
           {
             (*selector_handler_pair.second)(access, current_block, i);
+            ++_num_selected_particles;
           }
         }
       });
+
+      std::cout << _num_selected_particles
+                << " particles are selected." << std::endl;
     }
   }
 
 private:
   std::vector<std::string> _included_fields;
   selector_list _selectors;
+  std::size_t _num_selected_particles;
 };
 
 
@@ -277,7 +284,7 @@ int main(int argc, char** argv)
 
 
     std::vector<std::unique_ptr<selector>> selectors;
-    std::vector<std::unique_ptr<selection_handler>> handlers;
+    std::vector<std::unique_ptr<selected_particle_storage>> handlers;
     std::vector<std::string> output_files;
     filter::selector_list selector_handler_pairs;
 
@@ -307,7 +314,7 @@ int main(int argc, char** argv)
       selectors.push_back(std::unique_ptr<selector>{
                             new sphere_selector{sphere_center, r}
                           });
-      handlers.push_back(std::unique_ptr<selection_handler>{
+      handlers.push_back(std::unique_ptr<selected_particle_storage>{
                            new selected_particle_storage{extracted_fields}
                          });
 
@@ -318,9 +325,14 @@ int main(int argc, char** argv)
     filter data_filter{extracted_fields, selector_handler_pairs};
     data_filter(snapshot_prefix, num_snapshot_parts, 0);
 
+    for(std::size_t i = 0; i < handlers.size(); ++i)
+      std::cout << "Filter " << i
+                << " selected " << handlers[i]->get_num_stored_particles()
+                << " data points." << std::endl;
+
     std::cout << "Saving results..." << std::endl;
     for(std::size_t i = 0; i < handlers.size(); ++i)
-      dynamic_cast<selected_particle_storage*>(handlers[i].get())->save_particles(output_files[i], 0);
+      handlers[i].get()->save_particles(output_files[i], 0);
 
   }
   catch (std::exception& e)

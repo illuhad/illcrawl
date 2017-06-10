@@ -30,9 +30,13 @@
 
 namespace async {
 
+/// A worker thread that executes exactly one task in the background.
+/// If a second task is enqueued, waits until the first task
+/// has completed.
 class worker_thread
 {
 public:
+  /// Construct object
   worker_thread()
     : _is_operation_pending{false},
       _continue{true},
@@ -52,7 +56,8 @@ public:
       _worker_thread.join();
   }
 
-
+  /// If a task is currently running, waits until it
+  /// has completed.
   void wait()
   {
     if(_is_operation_pending)
@@ -64,6 +69,11 @@ public:
   }
 
 
+  /// Enqueues a user-specified function for asynchronous
+  /// execution in the worker thread. If another task is
+  /// still pending, waits until this task has completed.
+  /// \tparam Function A callable object with signature void(void).
+  /// \param f The function to enqueue for execution
   template<class Function>
   void operator()(Function f)
   {
@@ -77,12 +87,17 @@ public:
     _condition_wait.notify_one();
   }
 
+  /// \return whether there is currently an operation
+  /// pending.
   inline
   bool is_currently_working() const
   {
     return _is_operation_pending;
   }
 private:
+
+  /// Stop the worker thread - this should only be
+  /// done in the destructor.
   void halt()
   {
 
@@ -97,6 +112,9 @@ private:
     _condition_wait.notify_one();
   }
 
+  /// Starts the worker thread, which will execute the supplied
+  /// tasks. If no tasks are available, waits until a new task is
+  /// supplied.
   void work()
   {
     while(_continue)

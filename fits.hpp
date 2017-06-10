@@ -180,7 +180,7 @@ private:
 }
 
 
-#ifndef WITHOUT_MPI
+#ifndef FITS_WITHOUT_MPI
 #include <boost/mpi.hpp>
 
 
@@ -302,7 +302,7 @@ private:
 } // illcrawl
 
 
-#endif // WITHOUT_MPI
+#endif // FITS_WITHOUT_MPI
 
 #endif // FITS_HPP
 

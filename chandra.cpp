@@ -1052,7 +1052,7 @@ static constexpr device_scalar arf_data [] = {
 
 arf::arf(const qcl::device_context_ptr& ctx)
   : tabulated_function{ctx,
-                       arf_data, // data begin
+                       arf_data,        // data begin
                        arf_data + 1024, // data end
                        0.105322271585f, // x-range begins at 0.105 keV
                        0.010644f}       // dx = 0.0106 keV

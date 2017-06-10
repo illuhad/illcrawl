@@ -20,7 +20,7 @@
 
 #include <string>
 #include <iostream>
-#define WITHOUT_MPI
+#define FITS_WITHOUT_MPI
 #include "fits.hpp"
 #include "cl_types.hpp"
 #include "multi_array.hpp"
