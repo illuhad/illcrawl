@@ -31,9 +31,14 @@
 
 namespace illcrawl {
 
+/// The illcrawl computing environment - initializes OpenCL, compiles kernels,
+/// and assigns OpenCL devices to MPI processes.
 class environment
 {
 public:
+  /// Initialize the compute environment. Collective operation.
+  /// \param argc Number of command line arguments
+  /// \param argv command line arguments
   environment(int& argc, char**& argv)
     : _mpi_environment{argc, argv, boost::mpi::threading::funneled}
   {
@@ -95,39 +100,54 @@ public:
   {
   }
 
+  /// \return The OpenCL device context that has been assigned
+  /// to this MPI process.
   qcl::device_context_ptr get_compute_device() const
   {
     return _ctx;
   }
 
+  /// \return The global OpenCL context for this node.
   qcl::global_context_ptr get_compute_environment() const
   {
     return _global_ctx;
   }
 
+  /// \return The MPI communicator
   boost::mpi::communicator get_communicator() const
   {
     return boost::mpi::communicator{};
   }
 
+  /// \return A map that maps node names to a vector containing
+  /// the MPI ranks of the processes on the specified node.
   const std::map<std::string, std::vector<int>>& get_node_rank_map() const
   {
     return _node_rank_map;
   }
 
+  /// \return The names of the assigned OpenCL devices of all
+  /// MPI processes.
   const std::vector<std::string>& get_device_names() const
   {
     return _device_names;
   }
 
+  /// \return The supported extensions of the assigned OpenCL devices of all
+  /// MPI processes.
   const std::vector<std::string>& get_device_extensions() const
   {
     return _device_extensions;
   }
 
+  /// \return The MPI rank of the master process.
   static int get_master_rank() {return 0;}
 private:
 
+  /// Determines which MPI processes are on which node,
+  /// and determines the number of local processes (i.e.
+  /// the number of processes that run on the node
+  /// of this process). Collective operation.
   void determine_num_local_processes()
   {
     std::vector<std::string> names;

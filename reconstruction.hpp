@@ -104,6 +104,9 @@ public:
     // Setup grid
     util::grid_coordinate_translator<2> pixel_grid_translator{{{center[0], center[1]}},
                                                         {{x_size, y_size}}, num_pix_x};
+    math::vector2 coordinate_pivot2d = 0.5 * (pixel_grid_translator.get_grid_min_corner() +
+                                              pixel_grid_translator.get_grid_max_corner());
+    math::vector3 coordinate_pivot = {{coordinate_pivot2d[0], coordinate_pivot2d[1], 0.0}};
 
     auto grid_min_coordinates = pixel_grid_translator.get_grid_min_corner();
     auto grid_max_coordinates = pixel_grid_translator.get_grid_max_corner();
@@ -212,9 +215,8 @@ public:
           max_smoothing_length = smoothing_length;
 
         // Correct for periodicity of the simulation volume
-        coordinate_system::correct_periodicity(pixel_grid_translator,
-                                               periodic_wraparound_size,
-                                               smoothing_length,
+        coordinate_system::correct_periodicity(periodic_wraparound_size,
+                                               coordinate_pivot,
                                                particle_position);
 
         for(std::size_t j = 0; j < reconstruction_quantities.size(); ++j)

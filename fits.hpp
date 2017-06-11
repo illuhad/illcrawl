@@ -187,11 +187,12 @@ private:
 namespace illcrawl{
 namespace util {
 
-template<class Scheduler, class T>
+
+template<class Partitioner, class T>
 class distributed_fits_slices
 {
 public:
-  distributed_fits_slices(const Scheduler& partitioning,
+  distributed_fits_slices(const Partitioner& partitioning,
                           const std::string& filename)
     : _comm{partitioning.get_communicator()}, _partitioning{partitioning}, _filename{filename}
   {}
@@ -294,7 +295,7 @@ public:
 
 private:
   boost::mpi::communicator _comm;
-  Scheduler _partitioning;
+  Partitioner _partitioning;
   std::string _filename;
 };
 
