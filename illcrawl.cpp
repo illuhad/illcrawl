@@ -272,8 +272,11 @@ int main(int argc, char** argv)
   illcrawl::math::vector3 camera_look_at = {{0., 0., 1.}};
   illcrawl::volume_cutout total_render_volume{center, volume_size, periodic_wraparound};
 
+  illcrawl::math::scalar distribution_radius = 
+          std::sqrt(illcrawl::math::dot(distribution_size, distribution_size));
+          
   illcrawl::math::vector3 camera_pos = center;
-  illcrawl::math::scalar camera_distance = 1000.0;
+  illcrawl::math::scalar camera_distance = distribution_radius;
   camera_pos[2] -= camera_distance;
   illcrawl::camera cam{camera_pos, camera_look_at, 0.0, distribution_size[0], 1024, 1024};
 
@@ -298,7 +301,7 @@ int main(int argc, char** argv)
 
 
   illcrawl::volumetric_nn8_reconstruction reconstructor{
-    ctx, total_render_volume, loader.get_coordinates(), loader.get_smoothing_length(), 7000000};
+    ctx, total_render_volume, loader.get_coordinates(), loader.get_smoothing_length(), 40000000};
 
   //illcrawl::volumetric_slice<illcrawl::volumetric_nn8_reconstruction> slice{cam};
   //slice.create_slice(reconstructor, *xray_emission, result, 0);

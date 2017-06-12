@@ -97,7 +97,15 @@ public:
       // than the read dataset shape (which can never have a dimension of 0).
       // In this case, set the dataset shape.
       if(_dataset_shapes[i].size() != access.get_dataset_shape(i).size())
+      {
         _dataset_shapes[i] = access.get_dataset_shape(i);
+        assert(_dataset_shapes[i].size() > 0);
+        _dataset_shapes[i][0] = 0;
+      }
+      
+      // Increase row count
+      assert(_dataset_shapes[i].size() > 0);
+      _dataset_shapes[i][0] += 1;
 
       access.select_dataset(i);
       for(std::size_t j = 0; j < access.get_dataset_row_size(i); ++j)
@@ -138,8 +146,9 @@ public:
   std::size_t get_num_stored_particles() const
   {
     std::size_t num_particles = 0;
-    if(_stored_datasets.size() > 0)
-      num_particles = _stored_datasets.front().size();
+    if(_dataset_shapes.size() > 0)
+      if(_dataset_shapes[0].size() > 0)
+        num_particles = _dataset_shapes[0][0];
     return num_particles;
   }
 private:
