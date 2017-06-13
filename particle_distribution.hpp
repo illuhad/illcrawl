@@ -62,13 +62,17 @@ public:
         for(std::size_t j = 0; j < 3; ++j)
           coordinates[j] = access(current_block, i, j);
 
-        coordinate_system::correct_periodicity(periodic_wraparound_size,
-                                               estimated_center,
-                                               coordinates);
-
+        // Do not correct periodicity for the first particle -- this may
+        // lead to wrong corrections because the estimated center is
+        // still (0,0,0)
+        if(current_block.get_available_data_range_begin() != 0 || i != 0)
+          coordinate_system::correct_periodicity(periodic_wraparound_size,
+                                                 estimated_center,
+                                                 coordinates);
         // Update center estimation
         estimated_center = 1.0 / static_cast<math::scalar>(num_processed_particles + 1) * (
               static_cast<math::scalar>(num_processed_particles) * estimated_center + coordinates);
+
 
         for(std::size_t j = 0; j < 3; ++j)
         {
@@ -81,6 +85,7 @@ public:
         ++num_processed_particles;
       }
     };
+
 
 
     io::async_for_each_block(streamer.begin_row_blocks(100000),

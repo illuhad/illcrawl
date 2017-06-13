@@ -225,11 +225,11 @@ public:
             coordinates[j] = access(current_block, i, j);
 
           for(auto& selector_handler_pair :  _selectors)
-          if((*selector_handler_pair.first)(coordinates))
-          {
-            (*selector_handler_pair.second)(access, current_block, i);
-            ++_num_selected_particles;
-          }
+            if((*selector_handler_pair.first)(coordinates))
+            {
+              (*selector_handler_pair.second)(access, current_block, i);
+              ++_num_selected_particles;
+            }
         }
       });
 

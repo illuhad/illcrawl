@@ -273,7 +273,7 @@ int main(int argc, char** argv)
   illcrawl::volume_cutout total_render_volume{center, volume_size, periodic_wraparound};
 
   illcrawl::math::scalar distribution_radius = 
-          std::sqrt(illcrawl::math::dot(distribution_size, distribution_size));
+          0.5 * std::sqrt(illcrawl::math::dot(distribution_size, distribution_size));
           
   illcrawl::math::vector3 camera_pos = center;
   illcrawl::math::scalar camera_distance = distribution_radius;
@@ -312,7 +312,7 @@ int main(int argc, char** argv)
   // Create tomography on the master rank
   //tomography.create_tomographic_cube(reconstructor, *chandra_xray_emission, 1000.0, result);
 
-  illcrawl::integration::absolute_tolerance<illcrawl::math::scalar> tol{10.0};
+  illcrawl::integration::absolute_tolerance<illcrawl::math::scalar> tol{2.0};
 
 
   illcrawl::camera_movement::dual_axis_rotation_around_point
@@ -345,7 +345,7 @@ int main(int argc, char** argv)
     cam
   };
 
-  animation(1000, result);
+  animation(4, result);
 
   //illcrawl::volumetric_integration<illcrawl::volumetric_nn8_reconstruction> integrator{ctx, cam};
   //integrator.parallel_create_projection(reconstructor, *chandra_xray_emission, 1000.0,
