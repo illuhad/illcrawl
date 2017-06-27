@@ -763,7 +763,8 @@ public:
     if(reconstructed_quantity.is_integrated_quantity())
       dV = _cam.get_pixel_size()
          * _cam.get_pixel_size()
-         * _cam.get_pixel_size();
+         * _cam.get_pixel_size()
+         * reconstructed_quantity.get_unit_converter().volume_conversion_factor();
 
     for(std::size_t i = 0; i < samples_per_pixel; ++i)
     {
@@ -970,101 +971,28 @@ public:
     _ctx->memcpy_d2h(output.data(),
                      integration_engine.get_integration_state(),
                      total_num_pixels);
-  }
 
-  template<class Tolerance_type>
-  void create_serial_projection(Volumetric_reconstructor& reconstruction,
-                         const reconstruction_quantity::quantity& reconstructed_quantity,
-                         math::scalar z_range,
-                         const Tolerance_type& integration_tolerance,
-                         util::multi_array<device_scalar>& output) const
-  {
-    output = util::multi_array<device_scalar>{_cam.get_num_pixels(0),
-                                              _cam.get_num_pixels(1)};
+    // Finalize results
 
-    std::fill(output.begin(), output.end(), 0.0f);
-    std::size_t total_num_pixels = _cam.get_num_pixels(0)
-                                 * _cam.get_num_pixels(1);
+    // The multiplication with length_conversion_factor() is important to turn
+    // the integration along the line of sight from working in units of ckpc/h to
+    // kpc, which is what the implementation of the physical quantities use
+    // internally. This happens analogously a few lines below with the area
+    // perpendicular to the line of sight dA.
+    device_scalar dA = 1.0f *
+        reconstructed_quantity.get_unit_converter().length_conversion_factor();
 
-    std::vector<integrator> integrators(total_num_pixels);
-    std::vector<std::size_t> integrator_ids(total_num_pixels);
-
-    std::vector<device_scalar> integrand_values(
-          integrator::required_num_evaluations * total_num_pixels);
-
-    std::vector<device_vector4> evaluation_points;
-    evaluation_points.reserve(integrator::required_num_evaluations * total_num_pixels);
-
-
-    std::size_t num_running_integrators = 0;
-    do
+    if(reconstructed_quantity.is_integrated_quantity())
     {
-      evaluation_points.clear();
+      dA = static_cast<device_scalar>(_cam.get_pixel_size() * _cam.get_pixel_size());
 
-      num_running_integrators = 0;
-      for(std::size_t y = 0; y < _cam.get_num_pixels(1); ++y)
-      {
-        for(std::size_t x = 0; x < _cam.get_num_pixels(0); ++x)
-        {
-          std::size_t pos = y * _cam.get_num_pixels(0) + x;
-          if(integrators[pos].get_position() < z_range)
-          {
-            math::vector3 pixel_coord = _cam.get_pixel_coordinate(x,y);
-
-
-            typename integrator::evaluation_coordinates required_evaluations;
-            integrators[pos].obtain_next_step_coordinates(required_evaluations);
-
-            for(std::size_t i = 0; i < integrator::required_num_evaluations; ++i)
-            {
-              math::vector3 coord = pixel_coord;
-              coord += _cam.get_look_at() * required_evaluations[i];
-              device_vector4 evaluation_point;
-              for(std::size_t j = 0; j < 3; ++j)
-                evaluation_point.s[j] = static_cast<device_scalar>(coord[j]);
-
-              evaluation_points.push_back(evaluation_point);
-            }
-            integrator_ids[num_running_integrators] = pos;
-            ++num_running_integrators;
-          }
-        }
-      }
-
-      if(num_running_integrators > 0)
-      {
-        // Execute reconstruction
-        reconstruction.run(evaluation_points, reconstructed_quantity);
-        // Retrieve result
-        reconstruction.get_context()->memcpy_d2h(integrand_values.data(),
-                                              reconstruction.get_reconstruction(),
-                                              evaluation_points.size());
-      }
-      // Advance integrators
-      for(std::size_t i = 0; i < num_running_integrators; ++i)
-      {
-        std::size_t integrator_id = integrator_ids[i];
-        typename integrator::integrand_values values;
-
-        for(std::size_t j = 0; j < integrator::required_num_evaluations; ++j)
-          values[j] = integrand_values[integrator::required_num_evaluations * i + j];
-
-        integrators[integrator_id].advance(values, integration_tolerance, z_range);
-      }
-      std::cout << num_running_integrators << " integrators are still running.\n";
+      dA *= reconstructed_quantity.get_unit_converter().area_conversion_factor();
     }
-    while(num_running_integrators > 0);
 
-    // Store result
-    for(std::size_t y = 0; y < _cam.get_num_pixels(1); ++y)
-      for(std::size_t x = 0; x < _cam.get_num_pixels(0); ++x)
-      {
-        std::size_t pos = y * _cam.get_num_pixels(0) + x;
-        std::size_t idx [] = {x,y};
-
-        output[idx] = integrators[pos].get_state();
-      }
+    for(auto it = output.begin(); it != output.end(); ++it)
+      (*it) *= dA;
   }
+
 
 private:
   //static constexpr math::scalar range_epsilon = 0.1;
@@ -1072,6 +1000,8 @@ private:
   camera _cam;
   qcl::device_context_ptr _ctx;
 };
+
+
 
 }
 

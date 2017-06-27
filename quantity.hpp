@@ -30,6 +30,8 @@
 #include "hdf5_io.hpp"
 #include "qcl.hpp"
 #include "chandra.hpp"
+#include "units.hpp"
+#include "gaunt_factor.hpp"
 
 namespace illcrawl {
 namespace reconstruction_quantity {
@@ -53,14 +55,19 @@ public:
   }
 
   virtual ~quantity(){}
+
+  virtual const unit_converter& get_unit_converter() const = 0;
 };
 
 class illustris_quantity : public quantity
 {
 public:
   illustris_quantity(const io::illustris_data_loader* data,
-                     const std::vector<std::string>& dataset_identifiers)
-    : _data{data}, _dataset_identifiers{dataset_identifiers}
+                     const std::vector<std::string>& dataset_identifiers,
+                     const unit_converter& converter)
+    : _data{data},
+      _dataset_identifiers{dataset_identifiers},
+      _converter{converter}
   {
     assert(_data != nullptr);
   }
@@ -75,27 +82,39 @@ public:
 
   virtual ~illustris_quantity() {}
 
+  const unit_converter& get_unit_converter() const override
+  {
+    return _converter;
+  }
 private:
   const io::illustris_data_loader* _data;
   std::vector<std::string> _dataset_identifiers;
+  unit_converter _converter;
 };
 
 class density_temperature_based_quantity : public illustris_quantity
 {
 public:
-  density_temperature_based_quantity(const io::illustris_data_loader* data)
+  density_temperature_based_quantity(const io::illustris_data_loader* data,
+                                     const unit_converter& converter)
       : illustris_quantity{
             data,
             std::vector<std::string>{
               io::illustris_data_loader::get_density_identifier(),
               io::illustris_data_loader::get_internal_energy_identifier()
-            }
+            },
+            converter
           }
   {}
 
   virtual std::vector<math::scalar> get_quantitiy_scaling_factors() const override
   {
-    return std::vector<math::scalar>{{1.e7, 1.0}};
+    return std::vector<math::scalar>{
+      {
+        this->get_unit_converter().density_conversion_factor(),
+        1.0
+      }
+    };
   }
 
   virtual ~density_temperature_based_quantity(){}
@@ -104,64 +123,103 @@ public:
 class density_temperature_electron_abundance_based_quantity : public illustris_quantity
 {
 public:
-  density_temperature_electron_abundance_based_quantity(const io::illustris_data_loader* data)
+  density_temperature_electron_abundance_based_quantity(const io::illustris_data_loader* data,
+                                                        const unit_converter& converter)
       : illustris_quantity{
             data,
             {{io::illustris_data_loader::get_density_identifier(),
               io::illustris_data_loader::get_internal_energy_identifier(),
-              io::illustris_data_loader::get_electron_abundance_identifier()}}}
+              io::illustris_data_loader::get_electron_abundance_identifier()}},
+            converter
+        }
   {
   }
 
   virtual std::vector<math::scalar> get_quantitiy_scaling_factors() const override
   {
-    return std::vector<math::scalar>{{1.e7, 1.0, 1.0}};
+    return std::vector<math::scalar>{
+      {
+        this->get_unit_converter().density_conversion_factor(),
+        1.0, 1.0
+      }
+    };
   }
 
   virtual ~density_temperature_electron_abundance_based_quantity(){}
 };
 
-class xray_emission : public density_temperature_electron_abundance_based_quantity
+class xray_flux_based_quantity : public density_temperature_electron_abundance_based_quantity
 {
 public:
-  xray_emission(const io::illustris_data_loader* data)
-      : density_temperature_electron_abundance_based_quantity{data}
+  xray_flux_based_quantity(const io::illustris_data_loader* data,
+                           const unit_converter& converter,
+                           const qcl::device_context_ptr& ctx,
+                           math::scalar redshift,
+                           math::scalar luminosity_distance)
+    : density_temperature_electron_abundance_based_quantity{data, converter},
+      _z{redshift},
+      _luminosity_distance{luminosity_distance},
+      _gaunt_factor{ctx}
   {}
 
-  virtual qcl::kernel_ptr get_kernel(const qcl::device_context_ptr& ctx) const override
-  {
-    return ctx->get_kernel("xray_emission");
-  }
+  virtual ~xray_flux_based_quantity(){}
 
   virtual bool is_integrated_quantity() const override
   {
     return true;
   }
 
-  virtual ~xray_emission(){}
+  math::scalar get_redshift() const
+  {
+    return _z;
+  }
+
+  math::scalar get_luminosity_distance() const
+  {
+    return _luminosity_distance;
+  }
+
+protected:
+  void push_xray_flux_kernel_args(qcl::kernel_argument_list& args) const
+  {
+    args.push(static_cast<device_scalar>(_z));
+    args.push(static_cast<device_scalar>(_luminosity_distance));
+    args.push(_gaunt_factor.get_tabulated_function_values());
+  }
+
+private:
+  math::scalar _z;
+  math::scalar _luminosity_distance;
+
+  model::gaunt::thermally_averaged_ff _gaunt_factor;
 };
 
-class chandra_xray_emission : public density_temperature_electron_abundance_based_quantity
+class chandra_xray_total_count_rate : public xray_flux_based_quantity
 {
 public:
-  chandra_xray_emission(const io::illustris_data_loader* data,
-                        const qcl::device_context_ptr& ctx)
-      : density_temperature_electron_abundance_based_quantity{data},
+  chandra_xray_total_count_rate(const io::illustris_data_loader* data,
+                        const unit_converter& converter,
+                        const qcl::device_context_ptr& ctx,
+                        math::scalar redshift,
+                        math::scalar luminosity_distance)
+      : xray_flux_based_quantity{
+          data,
+          converter,
+          ctx,
+          redshift,
+          luminosity_distance
+        },
         _arf{ctx}
   {}
 
   virtual qcl::kernel_ptr get_kernel(const qcl::device_context_ptr& ctx) const override
   {
-    return ctx->get_kernel("chandra_xray_emission");
-  }
-
-  virtual bool is_integrated_quantity() const override
-  {
-    return true;
+    return ctx->get_kernel("chandra_xray_total_count_rate");
   }
 
   virtual void push_additional_kernel_args(qcl::kernel_argument_list& args) const override
   {
+    this->push_xray_flux_kernel_args(args);
     // The kernel also needs the arf
     args.push(_arf.get_tabulated_function_values());
     args.push(_arf.get_min_x());
@@ -169,18 +227,112 @@ public:
     args.push(_arf.get_dx());
   }
 
-  virtual ~chandra_xray_emission(){}
+  virtual ~chandra_xray_total_count_rate(){}
 
 private:
   chandra::arf _arf;
 };
 
+class chandra_xray_spectral_count_rate : public xray_flux_based_quantity
+{
+public:
+  chandra_xray_spectral_count_rate(const io::illustris_data_loader* data,
+                        const unit_converter& converter,
+                        const qcl::device_context_ptr& ctx,
+                        math::scalar redshift,
+                        math::scalar luminosity_distance,
+                        math::scalar photon_energy,
+                        math::scalar photon_energy_bin_width)
+      : xray_flux_based_quantity{
+          data,
+          converter,
+          ctx,
+          redshift,
+          luminosity_distance
+        },
+        _arf{ctx},
+        _energy{photon_energy},
+        _energy_bin_width{photon_energy_bin_width}
+  {}
 
+  virtual qcl::kernel_ptr get_kernel(const qcl::device_context_ptr& ctx) const override
+  {
+    return ctx->get_kernel("chandra_xray_spectral_count_rate");
+  }
+
+  virtual void push_additional_kernel_args(qcl::kernel_argument_list& args) const override
+  {
+    this->push_xray_flux_kernel_args(args);
+    // The kernel also needs the arf
+    args.push(_arf.get_tabulated_function_values());
+    args.push(_arf.get_min_x());
+    args.push(static_cast<cl_int>(_arf.get_num_function_values()));
+    args.push(_arf.get_dx());
+    args.push(static_cast<math::scalar>(_energy));
+    args.push(static_cast<math::scalar>(_energy_bin_width));
+  }
+
+  virtual ~chandra_xray_spectral_count_rate(){}
+
+private:
+  chandra::arf _arf;
+  math::scalar _energy;
+  math::scalar _energy_bin_width;
+};
+
+
+class xray_flux : public xray_flux_based_quantity
+{
+public:
+  xray_flux(const io::illustris_data_loader* data,
+            const unit_converter& converter,
+            const qcl::device_context_ptr& ctx,
+            math::scalar redshift,
+            math::scalar luminosity_distance,
+            math::scalar min_energy,
+            math::scalar max_energy,
+            unsigned num_samples)
+    : xray_flux_based_quantity{
+        data,
+        converter,
+        ctx,
+        redshift,
+        luminosity_distance
+      },
+      _min_energy{min_energy},
+      _max_energy{max_energy},
+      _num_samples{num_samples}
+  {}
+
+  virtual qcl::kernel_ptr get_kernel(const qcl::device_context_ptr& ctx) const override
+  {
+    return ctx->get_kernel("xray_flux");
+  }
+
+  virtual void push_additional_kernel_args(qcl::kernel_argument_list& args) const override
+  {
+    this->push_xray_flux_kernel_args(args);
+
+    args.push(static_cast<device_scalar>(_min_energy));
+    args.push(static_cast<device_scalar>(_max_energy));
+    args.push(static_cast<cl_int>(_num_samples));
+  }
+
+  virtual ~xray_flux(){}
+
+private:
+  math::scalar _min_energy;
+  math::scalar _max_energy;
+  unsigned _num_samples;
+};
+
+/*
 class luminosity_weighted_temperature : public density_temperature_electron_abundance_based_quantity
 {
 public:
-  luminosity_weighted_temperature(const io::illustris_data_loader* data)
-      : density_temperature_electron_abundance_based_quantity{data}
+  luminosity_weighted_temperature(const io::illustris_data_loader* data,
+                                  const unit_converter& converter)
+      : density_temperature_electron_abundance_based_quantity{data, converter}
   {}
 
   virtual qcl::kernel_ptr get_kernel(const qcl::device_context_ptr& ctx) const override
@@ -194,13 +346,13 @@ public:
   }
 
   virtual ~luminosity_weighted_temperature(){}
-};
+};*/
 
 class mean_temperature : public density_temperature_electron_abundance_based_quantity
 {
 public:
-  mean_temperature(const io::illustris_data_loader* data)
-      : density_temperature_electron_abundance_based_quantity{data}
+  mean_temperature(const io::illustris_data_loader* data, const unit_converter& converter)
+      : density_temperature_electron_abundance_based_quantity{data, converter}
   {}
 
   virtual qcl::kernel_ptr get_kernel(const qcl::device_context_ptr& ctx) const override
@@ -214,8 +366,9 @@ public:
 class interpolation_weight : public density_temperature_based_quantity
 {
 public:
-  interpolation_weight(const io::illustris_data_loader* data)
-      : density_temperature_based_quantity{data}
+  interpolation_weight(const io::illustris_data_loader* data,
+                       const unit_converter& converter)
+      : density_temperature_based_quantity{data, converter}
   {}
 
   virtual qcl::kernel_ptr get_kernel(const qcl::device_context_ptr& ctx) const override

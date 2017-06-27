@@ -43,4 +43,19 @@ scalar evaluate_tabulated_function(__read_only image1d_t evaluation_table,
   return function_value.s0;
 }
 
+scalar evaluate_tabulated_function2d(__read_only image2d_t evaluation_table,
+                                     vector2 xy_min,
+                                     vector2 delta,
+                                     vector2 position)
+{
+  vector2 rel_pos = (position - xy_min) / delta;
+
+  float4 function_value = read_imagef(evaluation_table,
+                                      linear_sampler,
+                                      rel_pos);
+  // Image format is CL_R, therefore the value will be stored
+  // in the first component
+  return function_value.s0;
+}
+
 #endif

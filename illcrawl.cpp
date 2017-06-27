@@ -42,120 +42,6 @@ void usage(std::ostream& ostr)
 using illcrawl::device_scalar;
 using render_result = illcrawl::util::multi_array<device_scalar>;
 
-void render_view3d(const illcrawl::math::vector3& center,
-                   const illcrawl::io::illustris_gas_data_loader& loader,
-                   illcrawl::smoothed_quantity_reconstruction2D& reconstruction)
-{
-
-  std::size_t resolution = 2048;
-  std::size_t num_frames = 400;
-  illcrawl::util::multi_array<device_scalar> result_data_cube{resolution, resolution, num_frames};
-  illcrawl::util::multi_array<device_scalar> result;
-
-  illcrawl::math::vector3 rotation_axis = {{0, 1, 0}};
-
-  for(std::size_t i = 0; i < num_frames; ++i)
-  {
-    illcrawl::math::scalar angle = 2.*M_PI * static_cast<illcrawl::math::scalar>(i) / num_frames;
-
-    std::cout << "Angle = " << angle << std::endl;
-    illcrawl::math::matrix3x3 rotation_matrix;
-    illcrawl::math::matrix_create_rotation_matrix(&rotation_matrix,
-                                                  rotation_axis,
-                                                  angle);
-    auto coordinate_transformation =
-        [&](const illcrawl::math::vector3& v) -> illcrawl::math::vector3
-    {
-      using namespace illcrawl;
-      illcrawl::math::vector3 v_prime = v - center;
-      v_prime = illcrawl::math::matrix_vector_mult(rotation_matrix, v_prime);
-      return v_prime + center;
-    };
-
-    auto xray_emission = std::make_shared<
-        illcrawl::reconstruction_quantity::xray_emission>(&loader);
-
-    reconstruction.set_coordinate_transformation(coordinate_transformation);
-    reconstruction.run(
-        *xray_emission,
-        loader.get_coordinates(), loader.get_smoothing_length(), loader.get_volume(),
-        center, 2000, 2000, resolution,
-        {{75000.0, 75000.0, 75000.0}}, result);
-
-    for(std::size_t x = 0; x < result.get_extent_of_dimension(0); ++x)
-      for(std::size_t y = 0; y < result.get_extent_of_dimension(1); ++y)
-      {
-        std::size_t idx2 [] = {x,y};
-        std::size_t idx3 [] = {x,y,i};
-        result_data_cube[idx3] = result[idx2];
-      }
-  }
-  illcrawl::util::fits<device_scalar> result_file{"illcrawl_3d_render.fits"};
-  result_file.save(result_data_cube);
-}
-
-void render_quantity(const illcrawl::math::vector3& center,
-                   const illcrawl::io::illustris_gas_data_loader& loader,
-                   illcrawl::smoothed_quantity_reconstruction2D& reconstruction,
-                   const illcrawl::reconstruction_quantity::quantity& rendered_quantity,
-                   illcrawl::util::multi_array<device_scalar>& result)
-{
-
-  reconstruction.run(
-      rendered_quantity,
-      loader.get_coordinates(), loader.get_smoothing_length(), loader.get_volume(),
-      center, 2000, 2000, 2048,
-      {{75000.0, 75000.0, 75000.0}}, result);
-}
-
-void render_quantity(const illcrawl::math::vector3& center,
-                   const illcrawl::io::illustris_gas_data_loader& loader,
-                   illcrawl::smoothed_quantity_reconstruction2D& reconstruction,
-                   const illcrawl::reconstruction_quantity::quantity& rendered_quantity,
-                   const std::string& filename = "illcrawl_render.fits")
-{
-  illcrawl::util::multi_array<device_scalar> result;
-  render_quantity(center, loader, reconstruction, rendered_quantity, result);
-
-  illcrawl::util::fits<device_scalar> result_file{filename};
-  result_file.save(result);
-}
-
-void render_luminosity_weighted_temperature(
-                   const illcrawl::math::vector3& center,
-                   const illcrawl::io::illustris_gas_data_loader& loader,
-                   illcrawl::smoothed_quantity_reconstruction2D& reconstruction,
-                   const illcrawl::util::multi_array<device_scalar>& xray_emission,
-                   const std::string& filename = "illcrawl_render.fits")
-{
-  auto luminosity_weighted_temperature = std::make_shared<
-      illcrawl::reconstruction_quantity::luminosity_weighted_temperature>(&loader);
-
-
-  illcrawl::util::multi_array<device_scalar> result;
-  render_quantity(center,
-                  loader,
-                  reconstruction,
-                  *luminosity_weighted_temperature,
-                  result);
-
-  assert(xray_emission.get_dimension() == result.get_dimension());
-  assert(xray_emission.get_extent_of_dimension(0) ==
-         result.get_extent_of_dimension(0));
-  assert(xray_emission.get_extent_of_dimension(1) ==
-         result.get_extent_of_dimension(1));
-
-  for(std::size_t i = 0; i < result.get_extent_of_dimension(0); ++i)
-    for(std::size_t j = 0; j < result.get_extent_of_dimension(1); ++j)
-    {
-      std::size_t idx [] = {i,j};
-      result[idx] /= xray_emission[idx];
-    }
-
-  illcrawl::util::fits<device_scalar> result_file{filename};
-  result_file.save(result);
-
-}
 
 int main(int argc, char** argv)
 {
@@ -203,6 +89,12 @@ int main(int argc, char** argv)
 
   illcrawl::io::illustris_gas_data_loader loader{data_file};
 
+  illcrawl::math::scalar h = 0.704;
+  // assume redshift z = 0.2
+  illcrawl::math::scalar a = 1.0 / (1.0 + 0.2);
+  illcrawl::unit_converter converter{a,h};
+
+
   illcrawl::math::vector3 periodic_wraparound {{75000.0, 75000.0, 75000.0}};
   illcrawl::particle_distribution distribution{
     loader.get_coordinates(),
@@ -223,20 +115,23 @@ int main(int argc, char** argv)
               << distribution_size[1] << "x" << distribution_size[2] << std::endl;
 
 
-  auto luminosity_weighted_temperature = std::make_shared<
-      illcrawl::reconstruction_quantity::luminosity_weighted_temperature>(&loader);
+  //auto luminosity_weighted_temperature = std::make_shared<
+  //    illcrawl::reconstruction_quantity::luminosity_weighted_temperature>(&loader, converter);
 
-  auto xray_emission = std::make_shared<
-      illcrawl::reconstruction_quantity::xray_emission>(&loader);
-
-  auto weights =
-      std::make_shared<illcrawl::reconstruction_quantity::interpolation_weight>(&loader);
+  illcrawl::math::scalar z = 0.2;
+  illcrawl::math::scalar luminosity_distance = 600.e3; // 600 Mpc = 600000 kpc
+  auto xray_flux = std::make_shared<
+      illcrawl::reconstruction_quantity::xray_flux>(&loader, converter, ctx, z, luminosity_distance, 1.0, 10.0, 100);
 
   auto mean_temperature =
-      std::make_shared<illcrawl::reconstruction_quantity::mean_temperature>(&loader);
+      std::make_shared<illcrawl::reconstruction_quantity::mean_temperature>(&loader, converter);
 
-  auto chandra_xray_emission=
-      std::make_shared<illcrawl::reconstruction_quantity::chandra_xray_emission>(&loader, ctx);
+  auto chandra_xray_counts =
+      std::make_shared<illcrawl::reconstruction_quantity::chandra_xray_total_count_rate>(&loader,
+                                                                                         converter,
+                                                                                         ctx,
+                                                                                         z,
+                                                                                         luminosity_distance);
 
   illcrawl::math::vector3 center = distribution_center;
 
@@ -266,7 +161,6 @@ int main(int argc, char** argv)
                   *xray_emission,
                   "illcrawl_render_emission.fits");
   */
-
 
   illcrawl::math::vector3 volume_size = distribution_size;
   illcrawl::math::vector3 camera_look_at = {{0., 0., 1.}};
@@ -312,7 +206,7 @@ int main(int argc, char** argv)
   // Create tomography on the master rank
   //tomography.create_tomographic_cube(reconstructor, *chandra_xray_emission, 1000.0, result);
 
-  illcrawl::integration::absolute_tolerance<illcrawl::math::scalar> tol{2.0};
+  illcrawl::integration::absolute_tolerance<illcrawl::math::scalar> tol{1.0e-2};
 
 
   illcrawl::camera_movement::dual_axis_rotation_around_point
@@ -331,7 +225,7 @@ int main(int argc, char** argv)
     illcrawl::integration::absolute_tolerance<illcrawl::math::scalar>
   > frame_renderer {
     env.get_compute_device(),
-    *chandra_xray_emission, // reconstructed quantity
+    *chandra_xray_counts, // reconstructed quantity
     2.0 * camera_distance, // integration depth
     tol, // integration tolerance
     reconstructor // reconstruction engine
@@ -345,7 +239,7 @@ int main(int argc, char** argv)
     cam
   };
 
-  animation(4, result);
+  animation(1, result);
 
   //illcrawl::volumetric_integration<illcrawl::volumetric_nn8_reconstruction> integrator{ctx, cam};
   //integrator.parallel_create_projection(reconstructor, *chandra_xray_emission, 1000.0,

@@ -70,11 +70,12 @@ public:
     _global_ctx->global_register_source_file("quantities.cl",
                                             // Kernels inside quantities.cl
                                             {
-                                              "luminosity_weighted_temperature",
-                                              "xray_emission",
+                                              //"luminosity_weighted_temperature",
+                                              "xray_flux",
                                               "identity",
                                               "mean_temperature",
-                                              "chandra_xray_emission"
+                                              "chandra_xray_total_count_rate",
+                                              "chandra_xray_spectral_count_rate"
                                             });
     _global_ctx->global_register_source_file("integration.cl",
                                             {

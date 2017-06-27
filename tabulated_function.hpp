@@ -35,65 +35,6 @@ namespace util {
 class tabulated_function
 {
 public:
-  template<class Input_iterator1,
-           class Input_iterator2>
-  tabulated_function(const qcl::device_context_ptr& ctx,
-                     Input_iterator1 x_begin,
-                     Input_iterator1 x_end,
-                     Input_iterator2 y_begin,
-                     device_scalar dx)
-    : _ctx{ctx}, _dx{dx}, _x_min{0}
-  {
-    assert(dx > 0);
-    assert(_ctx != nullptr);
-
-    if(x_begin == x_end)
-      return;
-
-    Input_iterator1 x_iter = x_begin;
-    Input_iterator2 y_iter = y_begin;
-
-    std::vector<device_scalar> x;
-    std::vector<device_scalar> y;
-    for(; x_iter != x_end; ++x_iter, ++y_iter)
-    {
-      x.push_back(*x_iter);
-      y.push_back(*y_iter);
-    }
-
-    _x_min = x.front();
-    device_scalar x_max = x.back();
-
-    std::size_t current_x_index = 0;
-
-    for(device_scalar x_pos = _x_min; x_pos <= x_max; x_pos += dx)
-    {
-      while(current_x_index < x.size() &&
-            x[current_x_index] > x_pos)
-        ++current_x_index;
-
-      if(current_x_index + 1 < x.size())
-      {
-        // Interpolate
-        device_scalar y0 = y[current_x_index];
-        device_scalar y1 = y[current_x_index + 1];
-
-        device_scalar x0 = x[current_x_index];
-        device_scalar deltax = x[current_x_index + 1] - x0;
-        assert(deltax > 0);
-
-        device_scalar rel_pos = (x_pos - x0) / deltax;
-        _y.push_back((1 - rel_pos)*y0 + rel_pos*y1);
-      }
-      else
-      {
-        _y.push_back(y.back());
-      }
-    }
-
-    init();
-
-  }
 
   template<class Input_iterator>
   tabulated_function(const qcl::device_context_ptr& ctx,
@@ -161,6 +102,127 @@ private:
   std::vector<device_scalar> _y;
 
   cl::Image1D _y_buffer;
+};
+
+/// Base class for 2D tabulated functions
+class tabulated_function2d
+{
+public:
+  template<class Input_iterator>
+  tabulated_function2d(const qcl::device_context_ptr& ctx,
+                       Input_iterator data_begin,
+                       Input_iterator data_end,
+                       const device_vector2& xy_start,
+                       const device_vector2& delta,
+                       std::size_t row_size,
+                       std::size_t column_size)
+    : _ctx{ctx},
+      _xy_start{xy_start},
+      _delta{delta},
+      _x_size{row_size},
+      _y_size{column_size}
+  {
+    init(data_begin, data_end);
+  }
+
+  tabulated_function2d(const qcl::device_context_ptr& ctx,
+                       const device_vector2& xy_start,
+                       const device_vector2& delta)
+    : _ctx{ctx},
+      _xy_start{xy_start},
+      _delta{delta},
+      _x_size{0},
+      _y_size{0}
+  {}
+
+
+  const cl::Image2D& get_tabulated_function_values() const
+  {
+    return _table_buffer;
+  }
+
+  std::size_t get_num_function_values() const
+  {
+    return _data.size();
+  }
+
+  std::size_t get_x_size() const
+  {
+    return _x_size;
+  }
+
+  std::size_t get_y_size() const
+  {
+    return _y_size;
+  }
+
+  device_vector2 get_min_xy() const
+  {
+    return _xy_start;
+  }
+
+  device_vector2 get_delta() const
+  {
+    return _delta;
+  }
+
+protected:
+  template<class Input_iterator>
+  void init(std::size_t row_size,
+            std::size_t column_size,
+            Input_iterator data_begin,
+            Input_iterator data_end)
+  {
+    this->_x_size = row_size;
+    this->_y_size = column_size;
+    this->init(data_begin, data_end);
+  }
+
+  template<class Input_iterator>
+  void init(Input_iterator data_begin,
+            Input_iterator data_end)
+  {
+    assert(_ctx != nullptr);
+    assert(_delta.s[0] > 0.0f);
+    assert(_delta.s[1] > 0.0f);
+
+    _data = std::vector<device_scalar>(data_end - data_begin);
+    assert(_data.size() == _x_size * _y_size);
+
+    std::copy(data_begin, data_end, _data.begin());
+
+    cl_int err;
+    _table_buffer = cl::Image2D{
+        _ctx->get_context(),
+        CL_MEM_READ_ONLY,
+        cl::ImageFormat{CL_R, CL_FLOAT},
+        _x_size,
+        _y_size,
+        0,
+        _data.data(),
+        &err
+    };
+
+    qcl::check_cl_error(err, "Could not create 2D image for the tabulated function");
+    _ctx->get_command_queue().enqueueWriteImage(_table_buffer, CL_TRUE,
+                                               {{0,0,0}},
+                                               {{_x_size,_y_size,1}},
+                                               0,0,_data.data());
+
+  }
+
+private:
+  qcl::device_context_ptr _ctx;
+
+  device_vector2 _xy_start;
+  device_vector2 _delta;
+
+  std::size_t _x_size;
+  std::size_t _y_size;
+
+  std::vector<device_scalar> _data;
+
+  cl::Image2D _table_buffer;
 };
 
 
