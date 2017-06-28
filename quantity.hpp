@@ -326,6 +326,49 @@ private:
   unsigned _num_samples;
 };
 
+
+class xray_spectral_flux : public xray_flux_based_quantity
+{
+public:
+  xray_spectral_flux(const io::illustris_data_loader* data,
+                     const unit_converter& converter,
+                     const qcl::device_context_ptr& ctx,
+                     math::scalar redshift,
+                     math::scalar luminosity_distance,
+                     math::scalar E,
+                     math::scalar dE)
+    : xray_flux_based_quantity{
+        data,
+        converter,
+        ctx,
+        redshift,
+        luminosity_distance
+      },
+      _photon_energy{E},
+      _photon_energy_bin_width{dE}
+  {}
+
+  virtual qcl::kernel_ptr get_kernel(const qcl::device_context_ptr& ctx) const override
+  {
+    return ctx->get_kernel("xray_spectral_flux");
+  }
+
+  virtual void push_additional_kernel_args(qcl::kernel_argument_list& args) const override
+  {
+    this->push_xray_flux_kernel_args(args);
+
+    args.push(static_cast<device_scalar>(_photon_energy));
+    args.push(static_cast<device_scalar>(_photon_energy_bin_width));
+  }
+
+  virtual ~xray_spectral_flux(){}
+
+private:
+  math::scalar _photon_energy;
+  math::scalar _photon_energy_bin_width;
+
+};
+
 /*
 class luminosity_weighted_temperature : public density_temperature_electron_abundance_based_quantity
 {

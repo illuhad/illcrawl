@@ -22,16 +22,33 @@
 #define CHANDRA_HPP
 
 #include "tabulated_function.hpp"
+#include "math.hpp"
 
 namespace illcrawl {
 namespace chandra {
 
-/// Cycle 19 chandra area response function
+/// Cycle 19 chandra ARF
 class arf : public util::tabulated_function{
 public:
   /// \param ctx The OpenCL context
   arf(const qcl::device_context_ptr& ctx);
   virtual ~arf(){}
+
+  /// \return the minimum energy in keV where the ARF is defined
+  /// (i.e. the minimum energy where chandra's sensitivity is
+  /// not 0)
+  static math::scalar arf_min_energy();
+
+  /// \return the maximum energy in keV where the ARF is defined
+  /// (i.e. the maximum energy where chandra's sensitivity is
+  /// not 0)
+  static math::scalar arf_max_energy();
+
+  /// \return the energy range of one entry in the ARF in keV
+  static math::scalar arf_bin_width();
+
+  /// \return the number of values in the ARF
+  static std::size_t get_num_arf_bins();
 };
 
 }

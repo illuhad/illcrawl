@@ -72,6 +72,7 @@ public:
                                             {
                                               //"luminosity_weighted_temperature",
                                               "xray_flux",
+                                              "xray_spectral_flux",
                                               "identity",
                                               "mean_temperature",
                                               "chandra_xray_total_count_rate",

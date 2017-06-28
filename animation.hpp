@@ -30,6 +30,7 @@
 #include "math.hpp"
 #include "camera.hpp"
 #include "volumetric_reconstruction.hpp"
+#include "quantity.hpp"
 
 namespace illcrawl {
 
@@ -43,12 +44,17 @@ class animation
 public:
   /// A frame renderer renders a frame at a given camera position.
   /// \param cam The camera position
+  /// \param frame_id The id (0 to \c num_frames - 1) of the current frame
+  /// \param num_frames The total number of frames that shall be rendered
   /// \param out The \c frame_renderer shall write the new frame into this 2D array.
   /// It is the responsibility of the \c frame_renderer to properly intialize the
   /// array dimension/sizes.
   using frame_renderer = std::function
   <
-    void (const camera& cam, util::multi_array<device_scalar>& out)
+    void (const camera& cam,
+          std::size_t frame_id,
+          std::size_t num_frames,
+          util::multi_array<device_scalar>& out)
   >;
   /// The \c camera_stepper advances the camera position and look-at vector after
   /// each frame.
@@ -117,7 +123,7 @@ protected:
     for(std::size_t i = first_frame; i < end_frame; ++i)
     {
       _stepper(i, total_frame_range, _cam);
-      _renderer(_cam, frame);
+      _renderer(_cam, i, total_frame_range, frame);
 
       assert(frame.get_extent_of_dimension(0) == _cam.get_num_pixels(0));
       assert(frame.get_extent_of_dimension(1) == _cam.get_num_pixels(1));
@@ -339,9 +345,24 @@ private:
   rotation_around_point _rotation;
 };
 
+/// A camera stepper that does not modify the camera at all
+/// (useful for animations where the camera should stand still,
+/// and quantity parameters shall be modified instead)
+class constant_state
+{
+public:
+  /// \c operator() to satisfy the \c camera_stepper concept. This camera stepper
+  /// will not do anything.
+  /// \param frame_id The id of the current frame
+  /// \param num_frames The total number of frames
+  /// \param cam The camera
+  void operator()(std::size_t frame_id, std::size_t num_frames, camera& cam)
+  {}
+};
+
 } // camera_movement
 
-namespace animation_frame {
+namespace frame_rendering {
 
 /// Satisifies the \c animation::frame_renderer concept. An implementation
 /// of a \c frame_renderer that renders images using the \c volumetric_integration,
@@ -373,9 +394,14 @@ public:
   /// Renders a frame
   /// \param cam The camera object describing position, look-at, resolution etc of
   /// the pixel screen
+  /// \param frame_id The id (0 to \c num_frames - 1) of the current frame
+  /// \param num_frames The total number of frames that shall be rendered
   /// \param out An array to hold the result. \c out will be properly initialized
   /// by this function, and does not need to be preinitialized.
-  void operator()(const camera& cam, util::multi_array<device_scalar>& out)
+  void operator()(const camera& cam,
+                  std::size_t frame_id,
+                  std::size_t num_frames,
+                  util::multi_array<device_scalar>& out)
   {
     volumetric_integration<Volumetric_reconstructor> integrator{_ctx, cam};
 
@@ -395,6 +421,76 @@ private:
 
   Volumetric_reconstructor _reconstructor;
 };
+
+template<class Volumetric_reconstructor,
+         class Integration_tolerance_type>
+class multi_quantity_integrated_projection
+{
+public:
+  using quantity_ptr = std::shared_ptr<reconstruction_quantity::quantity>;
+  using quantity_generator = std::function
+  <
+    quantity_ptr (const camera& cam, std::size_t frame_id, std::size_t num_frames)
+  >;
+
+  multi_quantity_integrated_projection(const qcl::device_context_ptr& ctx,
+                                       math::scalar integration_depth,
+                                       const Integration_tolerance_type& tol,
+                                       Volumetric_reconstructor& reconstructor,
+                                       const quantity_generator& create_quantity)
+    : _ctx{ctx},
+      _integration_range{integration_depth},
+      _tolerance{tol},
+      _reconstructor{reconstructor},
+      _create_quantity{create_quantity}
+  {
+    assert(_ctx != nullptr);
+  }
+
+
+
+  void operator()(const camera& cam,
+                  std::size_t frame_id,
+                  std::size_t num_frames,
+                  util::multi_array<device_scalar>& out)
+  {
+    volumetric_integration<Volumetric_reconstructor> integrator{_ctx, cam};
+
+    integrator.create_projection(_reconstructor,
+                                 *_create_quantity(cam, frame_id, num_frames),
+                                 _integration_range,
+                                 _tolerance,
+                                 out);
+  }
+
+private:
+  qcl::device_context_ptr _ctx;
+  math::scalar _integration_range;
+  Integration_tolerance_type _tolerance;
+  Volumetric_reconstructor _reconstructor;
+  quantity_generator _create_quantity;
+};
+
+
+class single_quantity_generator
+{
+public:
+  single_quantity_generator(const std::shared_ptr<reconstruction_quantity::quantity>& q)
+    : _quantity{q}
+  {}
+
+  std::shared_ptr<reconstruction_quantity::quantity> operator()(const camera& cam,
+                                                      std::size_t frame_id,
+                                                      std::size_t num_frames) const
+  {
+    return _quantity;
+  }
+private:
+  std::shared_ptr<reconstruction_quantity::quantity> _quantity;
+};
+
+
+
 
 }
 }

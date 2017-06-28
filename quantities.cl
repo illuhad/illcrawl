@@ -214,12 +214,9 @@ __kernel void luminosity_weighted_temperature(
 /// \param luminosity_distance The luminosity distance of the observed
 /// object in kpc
 /// \param gaunt_table The tabulated thermally averaged gaunt factors
-/// \param arf_table The tabulated chandra ARF
-/// \param arf_min_energy The energy of the first value of the ARF table in keV
-/// \param arf_num_energy_bins The number of of entries in the ARF table,
-/// i.e. the number of energy channels
-/// \param arf_energy_bin_width The energy spacing between each entry
-/// in the ARF table (in keV)
+/// \param E_min minimum integration energy in keV
+/// \param E_max maximum integration energy in keV
+/// \param num_samples The number of samples for the integration
 __kernel void xray_flux(__global scalar* out,
                             unsigned num_elements,
                             __global scalar* densities,
@@ -262,6 +259,50 @@ __kernel void xray_flux(__global scalar* out,
   }
 }
 
+/// Calculates the X-Ray flux within a given energy bin. The result will be
+/// in units of keV/s/kpc^3/m^2
+/// \param out Output array, must be at least of size \c num_elements
+/// \param num_elements number of data elements to process
+/// \param densities The densities in M_sun/kpc^3
+/// \param internal_energies The specific internal energies in (km/s)^2
+/// \param electron_abundances The electron abundances (dimensionless)
+/// \param z The redshift of the observed object
+/// \param luminosity_distance The luminosity distance of the observed
+/// object in kpc
+/// \param gaunt_table The tabulated thermally averaged gaunt factors
+/// \param E the photon energy
+/// \param dE the photon energy bin width
+__kernel void xray_spectral_flux(__global scalar* out,
+                            unsigned num_elements,
+                            __global scalar* densities,
+                            __global scalar* internal_energies,
+                            __global scalar* electron_abundances,
+                            scalar z,
+                            scalar luminosity_distance,
+                            __read_only image2d_t gaunt_table,
+                            scalar E,
+                            scalar dE)
+{
+  int tid = get_global_id(0);
+
+  if(tid < num_elements)
+  {
+    scalar density = densities[tid];
+    scalar internal_energy = internal_energies[tid];
+    scalar electron_abundance = electron_abundances[tid];
+    scalar T = get_temperature(internal_energy, electron_abundance);
+
+
+    out[tid] = get_spectral_brems_emission((1.f + z) * E,
+                                           (1.f + z) * dE,
+                                           T,
+                                           electron_abundance,
+                                           density,
+                                           luminosity_distance,
+                                           gaunt_table);
+
+  }
+}
 
 
 /// Calculates the total count rate, as observed by the chandra

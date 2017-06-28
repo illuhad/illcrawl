@@ -33,6 +33,7 @@
 #include "tree_ostream.hpp"
 #include "partitioner.hpp"
 #include "animation.hpp"
+#include "spectrum.hpp"
 
 void usage(std::ostream& ostr)
 {
@@ -206,9 +207,31 @@ int main(int argc, char** argv)
   // Create tomography on the master rank
   //tomography.create_tomographic_cube(reconstructor, *chandra_xray_emission, 1000.0, result);
 
-  illcrawl::integration::absolute_tolerance<illcrawl::math::scalar> tol{1.0e-2};
+  illcrawl::integration::absolute_tolerance<illcrawl::math::scalar> tol{100.0};
 
+  illcrawl::spectrum::xray_spectrum_quantity_generator quantity_gen {
+    env.get_compute_device(),
+    converter,
+    &loader,
+    z,
+    luminosity_distance,
+    0.1,
+    10.0
+  };
 
+  illcrawl::spectrum::spectrum_generator
+  <
+      illcrawl::volumetric_nn8_reconstruction,
+      illcrawl::uniform_work_partitioner
+  > spectrum{
+    env.get_compute_device(),
+    illcrawl::uniform_work_partitioner{env.get_communicator()},
+    reconstructor
+  };
+
+  spectrum(cam, tol, 2.0*camera_distance, quantity_gen, 100, result);
+
+  /*
   illcrawl::camera_movement::dual_axis_rotation_around_point
   camera_mover{
     distribution_center,
@@ -219,7 +242,8 @@ int main(int argc, char** argv)
     360.0  // theta range
   };
 
-  illcrawl::animation_frame::integrated_projection
+
+  illcrawl::frame_rendering::integrated_projection
   <
     illcrawl::volumetric_nn8_reconstruction,
     illcrawl::integration::absolute_tolerance<illcrawl::math::scalar>
@@ -240,6 +264,7 @@ int main(int argc, char** argv)
   };
 
   animation(1, result);
+  */
 
   //illcrawl::volumetric_integration<illcrawl::volumetric_nn8_reconstruction> integrator{ctx, cam};
   //integrator.parallel_create_projection(reconstructor, *chandra_xray_emission, 1000.0,
@@ -257,8 +282,12 @@ int main(int argc, char** argv)
   env.get_communicator().barrier();
   master_cout << "Saving result..." << std::endl;
 
+  //illcrawl::util::distributed_fits_slices<illcrawl::uniform_work_partitioner, device_scalar>
+  //    result_file{animation.get_partitioning(), "illcrawl_render.fits"};
+
+
   illcrawl::util::distributed_fits_slices<illcrawl::uniform_work_partitioner, device_scalar>
-      result_file{animation.get_partitioning(), "illcrawl_render.fits"};
+      result_file{spectrum.get_partitioning(), "illcrawl_render.fits"};
 
   result_file.save(result);
 

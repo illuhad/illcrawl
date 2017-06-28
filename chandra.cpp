@@ -1050,6 +1050,26 @@ static constexpr device_scalar arf_data [] = {
   0.738727629185f
 };
 
+math::scalar arf::arf_min_energy()
+{
+  return 0.1053223;
+}
+
+math::scalar arf::arf_bin_width()
+{
+  return 0.010644;
+}
+
+math::scalar arf::arf_max_energy()
+{
+  return arf_min_energy() + 1024 * arf_bin_width();
+}
+
+std::size_t arf::get_num_arf_bins()
+{
+  return 1024;
+}
+
 arf::arf(const qcl::device_context_ptr& ctx)
   : tabulated_function{ctx,
                        arf_data,        // data begin
