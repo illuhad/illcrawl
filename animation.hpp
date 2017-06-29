@@ -96,6 +96,8 @@ public:
     (*this)(0, num_frames, num_frames, out);
   }
 
+
+
 protected:
   /// \param first_frame The first frame of the frame range that should be
   /// renderered
@@ -144,6 +146,7 @@ private:
   frame_renderer _renderer;
   camera_stepper _stepper;
   camera _cam;
+
 };
 
 
@@ -454,6 +457,11 @@ public:
                   std::size_t num_frames,
                   util::multi_array<device_scalar>& out)
   {
+    // This is a workaround to force the reconstructors to recalculate
+    // the quantities - otherwise the reconstructor will assume that
+    // nothing has changed and reuse the previous state.
+    _reconstructor.purge_state();
+
     volumetric_integration<Volumetric_reconstructor> integrator{_ctx, cam};
 
     integrator.create_projection(_reconstructor,

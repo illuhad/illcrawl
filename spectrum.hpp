@@ -108,6 +108,7 @@ public:
     math::scalar current_energy = _min_energy
                                 + frame_id * energy_bin_width;
 
+
     return std::make_shared<reconstruction_quantity::xray_spectral_flux>(
           _data,
           _converter,

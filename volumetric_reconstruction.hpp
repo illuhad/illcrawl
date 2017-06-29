@@ -134,6 +134,14 @@ public:
 
   }
 
+  /// Purges the state of the reconstructor,
+  /// making sure that following reconstructions will not reuse
+  /// any data from previous reconstructions.
+  void purge_state()
+  {
+    this->_tiles = nullptr;
+  }
+
   /// Execute the reconstruction
   /// \param evaluation_points The points at which the data shall be
   /// interpolated
@@ -470,6 +478,13 @@ public:
   using nearest_neighbor_list = device_vector8;
   using particle = device_vector4;
 
+  /// Purges the state of the reconstructor,
+  /// making sure that following reconstructions will not reuse
+  /// any data from previous reconstructions.
+  void purge_state()
+  {
+    this->_tree = nullptr;
+  }
 
   void run(const cl::Buffer& evaluation_points_buffer,
            std::size_t num_evaluation_points,
