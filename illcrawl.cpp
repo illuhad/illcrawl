@@ -207,7 +207,7 @@ int main(int argc, char** argv)
   // Create tomography on the master rank
   //tomography.create_tomographic_cube(reconstructor, *chandra_xray_emission, 1000.0, result);
 
-  illcrawl::integration::absolute_tolerance<illcrawl::math::scalar> tol{1.e-8};
+  illcrawl::integration::absolute_tolerance<illcrawl::math::scalar> tol{1.e-9};
 
   illcrawl::spectrum::xray_spectrum_quantity_generator quantity_gen {
     env.get_compute_device(),
@@ -229,7 +229,7 @@ int main(int argc, char** argv)
     reconstructor
   };
 
-  spectrum(cam, tol, 2.0*camera_distance, quantity_gen, 100, result);
+  spectrum(cam, tol, 2.0*camera_distance, quantity_gen, 500, result);
 
   /*
   illcrawl::camera_movement::dual_axis_rotation_around_point

@@ -117,8 +117,8 @@ public:
                        std::size_t row_size,
                        std::size_t column_size)
     : _ctx{ctx},
-      _xy_start{xy_start},
-      _delta{delta},
+      _xy_start(xy_start),
+      _delta(delta),
       _x_size{row_size},
       _y_size{column_size}
   {
@@ -129,8 +129,8 @@ public:
                        const device_vector2& xy_start,
                        const device_vector2& delta)
     : _ctx{ctx},
-      _xy_start{xy_start},
-      _delta{delta},
+      _xy_start(xy_start),
+      _delta(delta),
       _x_size{0},
       _y_size{0}
   {}
