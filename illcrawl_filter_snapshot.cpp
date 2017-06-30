@@ -31,6 +31,7 @@
 #include "coordinate_system.hpp"
 
 const std::size_t blocksize = 500000;
+const illcrawl::math::vector3 periodic_length = {{75000.,75000.,75000.}};
 
 class selector
 {
@@ -55,7 +56,7 @@ public:
     using namespace illcrawl;
 
     math::vector3 pos = particle_position;
-    illcrawl::coordinate_system::correct_periodicity({{75000.,75000.,75000.}},
+    illcrawl::coordinate_system::correct_periodicity(periodic_length,
                                                      _center,
                                                      pos);
 
@@ -68,6 +69,77 @@ private:
   illcrawl::math::scalar _radius;
 };
 
+class box_selector : public selector
+{
+public:
+  box_selector(const illcrawl::math::vector3 min_corner,
+               const illcrawl::math::vector3 max_corner)
+    : _min_corner(min_corner), _max_corner(max_corner)
+  {
+    using namespace illcrawl;
+    _center = 0.5 * (_min_corner + _max_corner);
+  }
+
+  virtual ~box_selector() {}
+
+
+  virtual
+  bool operator()(const illcrawl::math::vector3& particle_position) const override
+  {
+    illcrawl::math::vector3 pos = particle_position;
+    illcrawl::coordinate_system::correct_periodicity(periodic_length,
+                                                     _center,
+                                                     pos);
+
+    for(std::size_t i = 0; i < 3; ++i)
+      if(particle_position[i] < _min_corner[i] ||
+         particle_position[i] > _max_corner[i])
+        return false;
+
+    return true;
+  }
+
+private:
+  illcrawl::math::vector3 _min_corner;
+  illcrawl::math::vector3 _max_corner;
+  illcrawl::math::vector3 _center;
+};
+
+
+class cube_selector : public box_selector
+{
+public:
+  cube_selector(const illcrawl::math::vector3& center,
+                illcrawl::math::scalar sidelength)
+    : box_selector{get_min_corner(center,sidelength),
+                   get_max_corner(center,sidelength)}
+  {}
+
+  virtual ~cube_selector(){}
+
+private:
+  static illcrawl::math::vector3 get_min_corner(const illcrawl::math::vector3& center,
+                                                illcrawl::math::scalar sidelength)
+  {
+    illcrawl::math::vector3 result = center;
+
+    for(std::size_t i = 0; i < 3; ++i)
+      result[i] -= 0.5 * sidelength;
+
+    return result;
+  }
+
+  static illcrawl::math::vector3 get_max_corner(const illcrawl::math::vector3& center,
+                                                illcrawl::math::scalar sidelength)
+  {
+    illcrawl::math::vector3 result = center;
+
+    for(std::size_t i = 0; i < 3; ++i)
+      result[i] += 0.5 * sidelength;
+
+    return result;
+  }
+};
 
 
 class selected_particle_storage
@@ -255,6 +327,7 @@ int main(int argc, char** argv)
   {
     po::options_description options{"Allowed options"};
     std::vector<std::string> sphere_filters;
+    std::vector<std::string> cube_filters;
     std::vector<std::string> extracted_fields;
 
     options.add_options()
@@ -266,6 +339,8 @@ int main(int argc, char** argv)
                                          "fields which are extracted (apart from coordinates -- they are always extracted)")
         ("sphere_filter", po::value<std::vector<std::string>>(&sphere_filters),
                                          "define a selection sphere. Format: --sphere_filter x,y,z,r,output_file")
+        ("cube_filter", po::value<std::vector<std::string>>(&cube_filters),
+                                         "define a selection cube. Format: --cube_filter x,y,z,half_sidelength,output_file (with the center coordinates x,y,z)")
         ("help,h", "print help message")
     ;
 
@@ -322,6 +397,42 @@ int main(int argc, char** argv)
 
       selectors.push_back(std::unique_ptr<selector>{
                             new sphere_selector{sphere_center, r}
+                          });
+      handlers.push_back(std::unique_ptr<selected_particle_storage>{
+                           new selected_particle_storage{extracted_fields}
+                         });
+
+      selector_handler_pairs.push_back(std::make_pair(selectors.back().get(),
+                                                      handlers.back().get()));
+    }
+
+    for(const std::string& cube_filter_description : cube_filters)
+    {
+      std::vector<std::string> parts;
+      boost::split(parts, cube_filter_description, boost::is_any_of(",;"));
+      if(parts.size() != 5)
+        throw std::invalid_argument{"Invalid cube filter description: "+cube_filter_description};
+
+
+      illcrawl::math::scalar x = std::stod(parts[0]);
+      illcrawl::math::scalar y = std::stod(parts[1]);
+      illcrawl::math::scalar z = std::stod(parts[2]);
+      illcrawl::math::scalar sidelength = 2.0 * std::stod(parts[3]);
+
+      illcrawl::math::vector3 cube_center = {{x,y,z}};
+      std::string output_file = parts[4];
+
+      std::cout << "Registering cube filter with center "
+                << x << ", " << y << ", " << z
+                << " and sidelength " << sidelength
+                << ". Output file will be " << output_file
+                << std::endl;
+
+      output_files.push_back(output_file);
+
+
+      selectors.push_back(std::unique_ptr<selector>{
+                            new cube_selector{cube_center, sidelength}
                           });
       handlers.push_back(std::unique_ptr<selected_particle_storage>{
                            new selected_particle_storage{extracted_fields}
