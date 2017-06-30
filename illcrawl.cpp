@@ -120,7 +120,7 @@ int main(int argc, char** argv)
   //    illcrawl::reconstruction_quantity::luminosity_weighted_temperature>(&loader, converter);
 
   illcrawl::math::scalar z = 0.2;
-  illcrawl::math::scalar luminosity_distance = 600.e3; // 600 Mpc = 600000 kpc
+  illcrawl::math::scalar luminosity_distance =  978500; // 978.5 Mpc for z=0.2
   auto xray_flux = std::make_shared<
       illcrawl::reconstruction_quantity::xray_flux>(&loader, converter, ctx, z, luminosity_distance, 1.0, 10.0, 100);
 
