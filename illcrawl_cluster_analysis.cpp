@@ -33,6 +33,7 @@ int main(int argc, char** argv)
 {
   std::string plot_name;
   unsigned num_radii;
+  illcrawl::math::scalar sampling_density;
 
   boost::program_options::options_description options;
   options.add_options()
@@ -41,7 +42,10 @@ int main(int argc, char** argv)
        "the name of the output plot (without file extension)")
       ("--num_radii,n",
        boost::program_options::value<unsigned>(&num_radii)->default_value(100),
-       "The number of sampled radii");
+       "The number of sampled radii")
+      ("--mean_sampling_density,s",
+       boost::program_options::value<illcrawl::math::scalar>(&sampling_density)->default_value(5.e-4),
+       "the mean sampling density in units of 1/(ckpc/h)^3");
 
 
   illcrawl::quantity_command_line_parser quantity_parser;
@@ -51,7 +55,6 @@ int main(int argc, char** argv)
 
   try
   {
-
     app.parse_command_line();
     std::unique_ptr<illcrawl::reconstruction_quantity::quantity> reconstructed_quantity =
         quantity_parser.create_quantity(app);
@@ -67,7 +70,7 @@ int main(int argc, char** argv)
     };
 
     // Create profile object
-    illcrawl::analysis::radial_profile<
+    illcrawl::analysis::distributed_mc_radial_profile<
         illcrawl::uniform_work_partitioner,
         illcrawl::volumetric_nn8_reconstruction
     >
@@ -77,13 +80,13 @@ int main(int argc, char** argv)
       app.get_gas_distribution_center(),
       0.5 * app.get_gas_distribution_size()[0],
       num_radii,
-      5.e-4,
     };
 
     // Calculate profile data
     std::vector<illcrawl::math::scalar> profile_data;
     profile(reconstructor,
             *reconstructed_quantity,
+            sampling_density,
             profile_data,
             app.get_environment().get_master_rank());
     // Wait for all processes to finish

@@ -34,7 +34,7 @@
 #include "partitioner.hpp"
 #include "animation.hpp"
 #include "spectrum.hpp"
-#include "profile.hpp"
+
 
 #include "illcrawl.hpp"
 
