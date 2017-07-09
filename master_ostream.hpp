@@ -18,6 +18,9 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#ifndef MASTER_OSTREAM_HPP
+#define MASTER_OSTREAM_HPP
+
 #include <ostream>
 #include <mpi.h>
 
@@ -116,3 +119,5 @@ master_ostream& operator<<(master_ostream& ostr,
 
 }
 }
+
+#endif

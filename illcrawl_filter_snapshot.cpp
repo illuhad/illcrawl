@@ -322,40 +322,39 @@ int main(int argc, char** argv)
 
   namespace po = boost::program_options;
 
+  po::options_description options{"Allowed options"};
+  std::vector<std::string> sphere_filters;
+  std::vector<std::string> cube_filters;
+  std::vector<std::string> extracted_fields;
+
+  options.add_options()
+      ("snapshot_prefix,p", po::value<std::string>()->default_value("snapshot_"), "set prefix for the filename of the snapshot chunks. "
+                                       "E.g., if the snapshots are named snapshot_0-i.hdf5,"
+                                       "with i being the chunk number, the prefix is snapshot_0-")
+      ("num_snapshot_parts,n", po::value<int>(), "The number of snapshot chunks.")
+      ("extract,e", po::value<std::vector<std::string>>(&extracted_fields),
+                                       "fields which are extracted (apart from coordinates -- they are always extracted)")
+      ("sphere_filter", po::value<std::vector<std::string>>(&sphere_filters),
+                                       "define a selection sphere. Format: --sphere_filter x,y,z,r,output_file")
+      ("cube_filter", po::value<std::vector<std::string>>(&cube_filters),
+                                       "define a selection cube. Format: --cube_filter x,y,z,half_sidelength,output_file (with the center coordinates x,y,z)")
+      ("help,h", "print help message");
 
   try
   {
-    po::options_description options{"Allowed options"};
-    std::vector<std::string> sphere_filters;
-    std::vector<std::string> cube_filters;
-    std::vector<std::string> extracted_fields;
-
-    options.add_options()
-        ("snapshot_prefix,p", po::value<std::string>()->default_value("snapshot_"), "set prefix for the filename of the snapshot chunks. "
-                                         "E.g., if the snapshots are named snapshot_0-i.hdf5,"
-                                         "with i being the chunk number, the prefix is snapshot_0-")
-        ("num_snapshot_parts,n", po::value<int>(), "The number of snapshot chunks.")
-        ("extract,e", po::value<std::vector<std::string>>(&extracted_fields),
-                                         "fields which are extracted (apart from coordinates -- they are always extracted)")
-        ("sphere_filter", po::value<std::vector<std::string>>(&sphere_filters),
-                                         "define a selection sphere. Format: --sphere_filter x,y,z,r,output_file")
-        ("cube_filter", po::value<std::vector<std::string>>(&cube_filters),
-                                         "define a selection cube. Format: --cube_filter x,y,z,half_sidelength,output_file (with the center coordinates x,y,z)")
-        ("help,h", "print help message")
-    ;
 
     po::variables_map vm;
     po::store(po::command_line_parser(argc, argv).options(options)
                                                  .run(),
               vm);
 
-    po::notify(vm);
-
     if(vm.count("help"))
     {
       std::cout << options << std::endl;
       return 0;
     }
+
+    po::notify(vm);
 
     std::string snapshot_prefix = vm["snapshot_prefix"].as<std::string>();
     int num_snapshot_parts = vm["num_snapshot_parts"].as<int>();
@@ -454,6 +453,15 @@ int main(int argc, char** argv)
     for(std::size_t i = 0; i < handlers.size(); ++i)
       handlers[i].get()->save_particles(output_files[i], 0);
 
+  }
+  catch(boost::bad_any_cast& e)
+  {
+    std::cout << options << std::endl;
+  }
+  catch(boost::program_options::error& e)
+  {
+    std::cout << "Invalid command line: " << e.what() << std::endl;
+    std::cout << options << std::endl;
   }
   catch (std::exception& e)
   {

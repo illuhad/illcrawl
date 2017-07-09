@@ -29,6 +29,7 @@ endif()
 #find_package(OpenGL REQUIRED)
 #find_package(GLEW REQUIRED)
 #find_package(GLUT REQUIRED)
+
 find_package(MPI REQUIRED)
 find_package(OpenCL REQUIRED)
 find_package(HDF5 REQUIRED COMPONENTS CXX)
@@ -45,8 +46,10 @@ include_directories(${PROJECT_BINARY_DIR} ${OpenCL_INCLUDE_DIRS} ${HDF5_INCLUDE_
 add_executable(illcrawl_render illcrawl.cpp chandra.cpp gaunt_factor.cpp)
 add_executable(illcrawl_extract_fits_slice illcrawl_extract_fits_slice.cpp)
 add_executable(illcrawl_filter_snapshot illcrawl_filter_snapshot.cpp)
+add_executable(illcrawl_cluster_analysis illcrawl_cluster_analysis.cpp chandra.cpp gaunt_factor.cpp)
 
-target_link_libraries (illcrawl_render ${MPI_CXX_LINK_FLAGS} ${MPI_CXX_LIBRARIES} ${OpenCL_LIBRARIES} ${HDF5_CXX_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT}  ${Boost_MPI_LIBRARY} ${Boost_SERIALIZATION_LIBRARY} cfitsio)
+target_link_libraries (illcrawl_render ${MPI_CXX_LINK_FLAGS} ${MPI_CXX_LIBRARIES} ${OpenCL_LIBRARIES} ${HDF5_CXX_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT}  ${Boost_MPI_LIBRARY} ${Boost_PROGRAM_OPTIONS_LIBRARY} ${Boost_SERIALIZATION_LIBRARY} cfitsio)
+target_link_libraries (illcrawl_cluster_analysis ${MPI_CXX_LINK_FLAGS} ${MPI_CXX_LIBRARIES} ${OpenCL_LIBRARIES} ${HDF5_CXX_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT}  ${Boost_MPI_LIBRARY} ${Boost_PROGRAM_OPTIONS_LIBRARY} ${Boost_SERIALIZATION_LIBRARY} cfitsio)
 target_link_libraries (illcrawl_extract_fits_slice ${OpenCL_LIBRARIES} cfitsio)
 target_link_libraries (illcrawl_filter_snapshot ${MPI_CXX_LINK_FLAGS} ${MPI_CXX_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT} ${HDF5_CXX_LIBRARIES} ${Boost_PROGRAM_OPTIONS_LIBRARY})
 # Copy CL sources

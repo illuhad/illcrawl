@@ -34,262 +34,319 @@
 #include "partitioner.hpp"
 #include "animation.hpp"
 #include "spectrum.hpp"
+#include "profile.hpp"
 
-void usage(std::ostream& ostr)
-{
-  ostr << "Usage: illcrawl <Path to HDF5 file>" << std::endl;
-}
+#include "illcrawl.hpp"
 
+
+using illcrawl::math::scalar;
 using illcrawl::device_scalar;
 using render_result = illcrawl::util::multi_array<device_scalar>;
 
 
+
+struct xray_spectrum_options
+{
+  illcrawl::math::scalar min_energy;
+  illcrawl::math::scalar max_energy;
+  std::size_t num_energies;
+};
+
+struct command_line_options
+{
+  // General options
+  std::string output_file;
+  std::string render_target;
+  // Xray spectrum options
+  xray_spectrum_options xray_opts;
+  // Chandra spectrum options
+  std::size_t chandra_spectrum_num_energies;
+  // Animation options
+  std::size_t animation_num_frames;
+  scalar animation_phi_speed;
+  // Tomography options
+  std::size_t tomography_num_slices;
+  // integration
+  scalar absolute_tolerance;
+  scalar relative_tolerance;
+  // Resolution
+  std::size_t resolution_x;
+  std::size_t resolution_y;
+};
+
+template<class Partitioner>
+void save_distributed_fits(const Partitioner& partitioning,
+                           const std::string& filename,
+                           const render_result& data)
+{
+
+  illcrawl::util::distributed_fits_slices<Partitioner, device_scalar>
+      result_file
+  {
+    partitioning,
+    filename
+  };
+
+  result_file.save(data);
+}
+
+template<class Spectrum_quantity_creator,
+         class Volumetric_reconstructor,
+         class Tolerance_type>
+void create_spectrum(const illcrawl::illcrawl_app& app,
+                     const Spectrum_quantity_creator& quantity_gen,
+                     Volumetric_reconstructor& reconstructor,
+                     const illcrawl::camera& cam,
+                     const Tolerance_type& tol,
+                     std::size_t num_energies,
+                     const std::string& result_filename,
+                     render_result& result)
+{
+  illcrawl::spectrum::spectrum_generator
+  <
+      Volumetric_reconstructor,
+      illcrawl::uniform_work_partitioner
+  > spectrum{
+    app.get_environment().get_compute_device(),
+    illcrawl::uniform_work_partitioner{app.get_environment().get_communicator()},
+    reconstructor
+  };
+
+  spectrum(cam, tol, app.get_recommended_integration_depth(), quantity_gen, num_energies, result);
+  save_distributed_fits(spectrum.get_partitioning(), result_filename, result);
+}
+
+template<class Tolerance_type, class Volumetric_reconstructor>
+void run(const illcrawl::illcrawl_app& app,
+         const command_line_options& options,
+         const Tolerance_type& tol,
+         Volumetric_reconstructor& reconstructor,
+         const std::unique_ptr<illcrawl::reconstruction_quantity::quantity>& quantity)
+{
+  render_result result;
+  illcrawl::camera cam = app.create_distribution_centered_camera(options.resolution_x, options.resolution_y);
+
+  if(options.render_target == "image")
+  {
+    app.output_stream() << "Starting volumetric/integrative projection..." << std::endl;
+
+    illcrawl::volumetric_integration<Volumetric_reconstructor> integrator{
+      app.get_environment().get_compute_device(),
+      cam
+    };
+
+    integrator.create_projection(reconstructor,
+                                 *quantity,
+                                 app.get_recommended_integration_depth(),
+                                 tol, result);
+
+    illcrawl::util::fits<device_scalar> result_file{options.output_file};
+    result_file.save(result);
+  }
+  else if(options.render_target == "xray_spectrum")
+  {
+    app.output_stream() << "Starting calculation of xray spectrum "
+                                "(possibly specified quantity will be ignored)"
+                             << std::endl;
+
+    illcrawl::spectrum::xray_spectrum_quantity_generator quantity_gen {
+      app.get_environment().get_compute_device(),
+      app.get_unit_converter(),
+      &(app.get_data_loader()),
+      app.get_redshift(),
+      app.get_luminosity_distance(),
+      options.xray_opts.min_energy,
+      options.xray_opts.max_energy
+    };
+
+    create_spectrum(app, quantity_gen, reconstructor, cam, tol,
+                    options.xray_opts.num_energies, options.output_file, result);
+
+  }
+  else if(options.render_target == "chandra_spectrum")
+  {
+    app.output_stream() << "Starting calculation of chandra spectrum "
+                                "(possibly specified quantity will be ignored)"
+                             << std::endl;
+
+    illcrawl::spectrum::chandra_spectrum_quantity_generator quantity_gen {
+      app.get_environment().get_compute_device(),
+      app.get_unit_converter(),
+      &(app.get_data_loader()),
+      app.get_redshift(),
+      app.get_luminosity_distance()
+    };
+
+    create_spectrum(app, quantity_gen, reconstructor, cam, tol,
+                    options.chandra_spectrum_num_energies,
+                    options.output_file, result);
+  }
+  else if(options.render_target == "animation")
+  {
+    app.output_stream() << "Starting animation..." << std::endl;
+
+    if(options.animation_phi_speed <= 0)
+      throw std::invalid_argument{"animation.phi_speed must be > 0."};
+
+    illcrawl::camera_movement::dual_axis_rotation_around_point
+    camera_mover{
+      app.get_gas_distribution_center(),
+      illcrawl::math::vector3{{0,1,0}}, // initial phi axis
+      illcrawl::math::vector3{{1,0,0}}, // theta axis
+      cam,
+      options.animation_phi_speed * 360.0, // phi range
+      360.0  // theta range
+    };
+
+
+    illcrawl::frame_rendering::integrated_projection
+    <
+      Volumetric_reconstructor,
+      Tolerance_type
+    > frame_renderer {
+      app.get_environment().get_compute_device(),
+      *quantity, // reconstructed quantity
+      app.get_recommended_integration_depth(), // integration depth
+      tol, // integration tolerance
+      reconstructor // reconstruction engine
+    };
+
+    illcrawl::distributed_animation<illcrawl::uniform_work_partitioner>
+    animation{
+      illcrawl::uniform_work_partitioner{app.get_environment().get_communicator()},
+      frame_renderer,
+      camera_mover,
+      cam
+    };
+
+    animation(options.animation_num_frames, result);
+
+    save_distributed_fits(animation.get_partitioning(), options.output_file, result);
+  }
+  else if(options.render_target == "tomography")
+  {
+    app.output_stream() << "Starting tomography..." << std::endl;
+
+    illcrawl::distributed_volumetric_tomography
+    <
+      Volumetric_reconstructor,
+      illcrawl::uniform_work_partitioner
+    >
+    tomography{
+      illcrawl::uniform_work_partitioner{app.get_environment().get_communicator()},
+      cam
+    };
+
+    tomography.create_tomographic_cube(reconstructor,
+                                       *quantity,
+                                       app.get_recommended_integration_depth(),
+                                       result);
+
+    save_distributed_fits(tomography.get_partitioning(), options.output_file, result);
+  }
+  else
+    throw std::runtime_error("Invalid render target: "+options.render_target);
+}
+
 int main(int argc, char** argv)
 {
-  illcrawl::environment env{argc, argv};
-  illcrawl::util::master_ostream master_cout{
-    std::cout,
-    env.get_communicator(),
-    env.get_master_rank()
-  };
+  command_line_options cmd_options;
 
-  if (argc != 2)
+  boost::program_options::options_description options;
+  options.add_options()
+      ("output,o",
+       boost::program_options::value<std::string>(&cmd_options.output_file)->default_value("illcrawl_render.fits"),
+       "the output fits file")
+      ("render_target,t",
+       boost::program_options::value<std::string>(&cmd_options.render_target)->required(),
+       "the target type of the render. Can be xray_spectrum,chandra_spectrum,animation,image,tomography.")
+      ("xray_spectrum.min_energy",
+       boost::program_options::value<scalar>(&cmd_options.xray_opts.min_energy)->default_value(0.1),
+       "minimum energy for X-Ray spectra [keV]")
+      ("xray_spectrum.max_energy",
+       boost::program_options::value<scalar>(&cmd_options.xray_opts.max_energy)->default_value(10.0),
+       "maximum energy for X-Ray spectra [keV]")
+      ("xray_spectrum.num_energies",
+       boost::program_options::value<std::size_t>(&cmd_options.xray_opts.num_energies)->default_value(100),
+       "Number of sampled energies for X-ray spectra")
+      ("chandra_spectrum.num_energies",
+       boost::program_options::value<std::size_t>(&cmd_options.chandra_spectrum_num_energies)->default_value(100),
+       "Number of sampled energies for chandra spectra")
+      ("animation.num_frames",
+       boost::program_options::value<std::size_t>(&cmd_options.animation_num_frames)->default_value(100),
+       "Number of frames for animations")
+      ("animation.phi_speed",
+       boost::program_options::value<scalar>(&cmd_options.animation_phi_speed)->default_value(3.0),
+       "Speed of the rotation around the phi axis relative to the rotation speed around the theta axis")
+      ("tomography.num_slices",
+       boost::program_options::value<std::size_t>(&cmd_options.tomography_num_slices)->default_value(100),
+       "Number of slices for tomographies")
+      ("integration.absolute_tolerance",
+       boost::program_options::value<scalar>(&cmd_options.absolute_tolerance)->default_value(0.0),
+       "Absolute tolerance for line-of-sight integration (mutually exclusive with integration.relative_tolerance)")
+      ("integration.relative_tolerance",
+       boost::program_options::value<scalar>(&cmd_options.relative_tolerance)->default_value(1.e-2),
+       "Relative tolerance for line-of-sight integration (mutually exclusive with integration.absolute_tolerance)")
+      ("output.resolution.x",
+       boost::program_options::value<std::size_t>(&cmd_options.resolution_x)->default_value(1024),
+       "Number of pixels in x direction")
+      ("output.resolution.y",
+       boost::program_options::value<std::size_t>(&cmd_options.resolution_y)->default_value(1024),
+       "Number of pixels in y direction");
+
+  illcrawl::quantity_command_line_parser quantity_parser;
+  quantity_parser.register_options(options);
+
+  illcrawl::illcrawl_app app{argc, argv, std::cout, options};
+
+  try
   {
-    usage(master_cout);
+    app.parse_command_line();
 
-    return -1;
+    std::unique_ptr<illcrawl::reconstruction_quantity::quantity> reconstruction_quantity =
+        quantity_parser.create_quantity(app);
+
+    illcrawl::integration::absolute_tolerance<scalar> abs_tol{cmd_options.absolute_tolerance};
+    illcrawl::integration::relative_tolerance<scalar> rel_tol{cmd_options.relative_tolerance};
+
+    if(cmd_options.absolute_tolerance > 0.0 && cmd_options.relative_tolerance > 0.0)
+      throw std::invalid_argument{"Absolute and relative tolerances cannot both be set; they are mutually exclusive."};
+    if(cmd_options.absolute_tolerance <= 0.0 && cmd_options.relative_tolerance <= 0.0)
+      throw std::invalid_argument{"Absolute and relative tolerances cannot both be 0 - exactly one of them must be greater than 0."};
+
+    const std::size_t blocksize = 40000000;
+
+    illcrawl::volumetric_nn8_reconstruction reconstructor{
+      app.get_environment().get_compute_device(),
+      app.get_gas_distribution_volume_cutout(),
+      app.get_data_loader().get_coordinates(),
+      app.get_data_loader().get_smoothing_length(),
+      blocksize
+    };
+
+    if(cmd_options.absolute_tolerance > 0.0)
+      run(app, cmd_options, abs_tol, reconstructor, reconstruction_quantity);
+    else
+      run(app, cmd_options, rel_tol, reconstructor, reconstruction_quantity);
+
   }
-  std::string data_file = argv[1];
-
-  master_cout << "Detected system configuration:" << std::endl;
-  illcrawl::util::tree_formatter tree_output{"Root"};
-  for(const auto& node : env.get_node_rank_map())
+  catch(boost::program_options::error& e)
   {
-    std::string node_entry_name = node.first;
-    illcrawl::util::tree_formatter::node node_entry;
-    for(int rank = 0; rank < static_cast<int>(node.second.size()); ++rank)
-    {
-      int global_rank = node.second[rank];
-      std::string process_entry_name = "Local rank "
-          +std::to_string(rank)
-          +" (Global rank "+std::to_string(global_rank)
-          +")";
-
-      illcrawl::util::tree_formatter::node process_entry;
-      process_entry.append_content("Using device: " + env.get_device_names()[global_rank]+"\n");
-      process_entry.append_content("Device capabilities: " + env.get_device_extensions()[global_rank]+"\n");
-
-      node_entry.add_node(process_entry_name, process_entry);
-    }
-    tree_output.get_root().add_node(node_entry_name, node_entry);
+    app.output_stream() << app.get_command_line_options() << std::endl;
   }
-  master_cout << tree_output << std::endl;
+  catch(std::exception& e)
+  {
+    std::cout << "Error: " << e.what() << std::endl;
+  }
+  catch(...)
+  {
+    std::cout << "Fatal error occured." << std::endl;
+  }
 
-
-  qcl::device_context_ptr ctx = env.get_compute_device();
-
-  illcrawl::io::illustris_gas_data_loader loader{data_file};
-
-  illcrawl::math::scalar h = 0.704;
-  // assume redshift z = 0.2
-  illcrawl::math::scalar a = 1.0 / (1.0 + 0.2);
-  illcrawl::unit_converter converter{a,h};
-
-
-  illcrawl::math::vector3 periodic_wraparound {{75000.0, 75000.0, 75000.0}};
-  illcrawl::particle_distribution distribution{
-    loader.get_coordinates(),
-    periodic_wraparound
-  };
-
-  illcrawl::math::vector3 distribution_center =
-      distribution.get_extent_center();
-  illcrawl::math::vector3 distribution_size =
-      distribution.get_distribution_size();
-
-
-  master_cout << "Distribution center: " << distribution_center[0] << ", "
-              << distribution_center[1] << ", "
-              << distribution_center[2]
-              << std::endl;
-  master_cout << "Distribution size: " << distribution_size[0] << "x"
-              << distribution_size[1] << "x" << distribution_size[2] << std::endl;
-
-
-  //auto luminosity_weighted_temperature = std::make_shared<
-  //    illcrawl::reconstruction_quantity::luminosity_weighted_temperature>(&loader, converter);
-
-  illcrawl::math::scalar z = 0.2;
-  illcrawl::math::scalar luminosity_distance =  978500; // 978.5 Mpc for z=0.2
-  auto xray_flux = std::make_shared<
-      illcrawl::reconstruction_quantity::xray_flux>(&loader, converter, ctx, z, luminosity_distance, 1.0, 10.0, 100);
-
-  auto mean_temperature =
-      std::make_shared<illcrawl::reconstruction_quantity::mean_temperature>(&loader, converter);
-
-  auto chandra_xray_counts =
-      std::make_shared<illcrawl::reconstruction_quantity::chandra_xray_total_count_rate>(&loader,
-                                                                                         converter,
-                                                                                         ctx,
-                                                                                         z,
-                                                                                         luminosity_distance);
-
-  illcrawl::math::vector3 center = distribution_center;
-
-  //illcrawl::smoothed_quantity_reconstruction2D reconstruction{ctx};
-
-  //render_view3d(center,
-  //              loader, reconstruction);
-
-  /*
-  render_result xray_emission_result;
-  render_quantity(center,
-                  loader,
-                  reconstruction,
-                  *xray_emission,
-                  xray_emission_result);
-
-
-  render_luminosity_weighted_temperature(center,
-                                         loader,
-                                         reconstruction,
-                                         xray_emission_result);
-
-
-  render_quantity(center,
-                  loader,
-                  reconstruction,
-                  *xray_emission,
-                  "illcrawl_render_emission.fits");
-  */
-
-  illcrawl::math::vector3 volume_size = distribution_size;
-  illcrawl::math::vector3 camera_look_at = {{0., 0., 1.}};
-  illcrawl::volume_cutout total_render_volume{center, volume_size, periodic_wraparound};
-
-  illcrawl::math::scalar distribution_radius = 
-          0.5 * std::sqrt(illcrawl::math::dot(distribution_size, distribution_size));
-          
-  illcrawl::math::vector3 camera_pos = center;
-  illcrawl::math::scalar camera_distance = distribution_radius;
-  camera_pos[2] -= camera_distance;
-  illcrawl::camera cam{camera_pos, camera_look_at, 0.0, distribution_size[0], 1024, 1024};
-
-  render_result result;
-  /*
-  illcrawl::volumetric_nn8_reconstruction reconstruction{
-        ctx,
-        total_render_volume,
-        loader.get_coordinates(),
-        loader.get_smoothing_length()
-  };
-
-  illcrawl::volumetric_integration<illcrawl::volumetric_nn8_reconstruction> integrator{cam};
-  integrator.create_projection(reconstruction, *xray_emission, 10.0, 1000.0, result);
-
-  illcrawl::util::fits<result_scalar> result_file{"illcrawl_render.fits"};
-  result_file.save(result); */
-
-
-  //illcrawl::volumetric_tree_reconstruction reconstructor{
-  //  ctx, total_render_volume, loader.get_coordinates(), 7000000, 0.9};
-
-
-  illcrawl::volumetric_nn8_reconstruction reconstructor{
-    ctx, total_render_volume, loader.get_coordinates(), loader.get_smoothing_length(), 40000000};
 
   //illcrawl::volumetric_slice<illcrawl::volumetric_nn8_reconstruction> slice{cam};
   //slice.create_slice(reconstructor, *xray_emission, result, 0);
 
-  //illcrawl::distributed_volumetric_tomography<illcrawl::volumetric_nn8_reconstruction,
-  //                                            illcrawl::uniform_work_partitioner>
-  //    tomography{illcrawl::uniform_work_partitioner{env.get_communicator()}, cam};
-  // Create tomography on the master rank
-  //tomography.create_tomographic_cube(reconstructor, *chandra_xray_emission, 1000.0, result);
-
-  illcrawl::integration::relative_tolerance<illcrawl::math::scalar> tol{1.e-2};
-
-  illcrawl::spectrum::xray_spectrum_quantity_generator quantity_gen {
-    env.get_compute_device(),
-    converter,
-    &loader,
-    z,
-    luminosity_distance,
-    0.1,
-    10.0
-  };
-
-  illcrawl::spectrum::spectrum_generator
-  <
-      illcrawl::volumetric_nn8_reconstruction,
-      illcrawl::uniform_work_partitioner
-  > spectrum{
-    env.get_compute_device(),
-    illcrawl::uniform_work_partitioner{env.get_communicator()},
-    reconstructor
-  };
-
-  spectrum(cam, tol, 2.0*camera_distance, quantity_gen, 500, result);
-
-  /*
-  illcrawl::camera_movement::dual_axis_rotation_around_point
-  camera_mover{
-    distribution_center,
-    illcrawl::math::vector3{{0,1,0}}, // initial phi axis
-    illcrawl::math::vector3{{1,0,0}}, // theta axis
-    cam,
-    3.0 * 360.0, // phi range
-    360.0  // theta range
-  };
-
-
-  illcrawl::frame_rendering::integrated_projection
-  <
-    illcrawl::volumetric_nn8_reconstruction,
-    illcrawl::integration::absolute_tolerance<illcrawl::math::scalar>
-  > frame_renderer {
-    env.get_compute_device(),
-    *chandra_xray_counts, // reconstructed quantity
-    2.0 * camera_distance, // integration depth
-    tol, // integration tolerance
-    reconstructor // reconstruction engine
-  };
-
-  illcrawl::distributed_animation<illcrawl::uniform_work_partitioner>
-  animation{
-    illcrawl::uniform_work_partitioner{env.get_communicator()},
-    frame_renderer,
-    camera_mover,
-    cam
-  };
-
-  animation(1, result);
-  */
-
-  //illcrawl::volumetric_integration<illcrawl::volumetric_nn8_reconstruction> integrator{ctx, cam};
-  //integrator.parallel_create_projection(reconstructor, *chandra_xray_emission, 1000.0,
-  //                             tol, result);
-  
-  /*render_result temperature_result;
-  illcrawl::volumetric_nn8_reconstruction reconstructor_b{
-    ctx, total_render_volume, loader.get_coordinates(), loader.get_smoothing_length(), 7000000};
-  integrator.create_projection(reconstructor_b, *luminosity_weighted_temperature, 1000.0,
-                               tol, temperature_result);
-  
-  for(std::size_t i = 0; i < temperature_result.get_num_elements(); ++i)
-    result.data()[i] = temperature_result.data()[i] / result.data()[i];*/
-
-  env.get_communicator().barrier();
-  master_cout << "Saving result..." << std::endl;
-
-  //illcrawl::util::distributed_fits_slices<illcrawl::uniform_work_partitioner, device_scalar>
-  //    result_file{animation.get_partitioning(), "illcrawl_render.fits"};
-
-
-  illcrawl::util::distributed_fits_slices<illcrawl::uniform_work_partitioner, device_scalar>
-      result_file{spectrum.get_partitioning(), "illcrawl_render.fits"};
-
-  result_file.save(result);
 
   return 0;
 }

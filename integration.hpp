@@ -33,6 +33,7 @@
 namespace illcrawl {
 namespace integration {
 
+
 template<class T>
 class absolute_tolerance
 {
@@ -92,7 +93,7 @@ struct is_relative_tolerance<relative_tolerance<T>>
   static constexpr bool value = true;
 };
 
-/// Solves dy/dz = f(z)
+/// Solves dy/dz = f(z) -- CPU version
 template<class T,
          class Coordinate_type>
 class runge_kutta_fehlberg

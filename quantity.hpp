@@ -24,6 +24,7 @@
 
 #include <cassert>
 #include <vector>
+#include <boost/program_options.hpp>
 
 #include "cl_types.hpp"
 #include "math.hpp"
@@ -32,6 +33,7 @@
 #include "chandra.hpp"
 #include "units.hpp"
 #include "gaunt_factor.hpp"
+
 
 namespace illcrawl {
 namespace reconstruction_quantity {
@@ -57,6 +59,7 @@ public:
   virtual ~quantity(){}
 
   virtual const unit_converter& get_unit_converter() const = 0;
+
 };
 
 class illustris_quantity : public quantity
