@@ -37,13 +37,13 @@ int main(int argc, char** argv)
 
   boost::program_options::options_description options;
   options.add_options()
-      ("--output,o",
+      ("output,o",
        boost::program_options::value<std::string>(&plot_name)->default_value("cluster_analysis"),
        "the name of the output plot (without file extension)")
-      ("--num_radii,n",
+      ("num_radii,n",
        boost::program_options::value<unsigned>(&num_radii)->default_value(100),
        "The number of sampled radii")
-      ("--mean_sampling_density,s",
+      ("mean_sampling_density,s",
        boost::program_options::value<illcrawl::math::scalar>(&sampling_density)->default_value(5.e-4),
        "the mean sampling density in units of 1/(ckpc/h)^3");
 

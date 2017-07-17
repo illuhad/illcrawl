@@ -989,23 +989,28 @@ public:
 
     // Finalize results
 
-    // The multiplication with length_conversion_factor() is important to turn
-    // the integration along the line of sight from working in units of ckpc/h to
-    // kpc, which is what the implementation of the physical quantities use
-    // internally. This happens analogously a few lines below with the area
-    // perpendicular to the line of sight dA.
-    device_scalar dA = 1.0f *
-        reconstructed_quantity.get_unit_converter().length_conversion_factor();
+    device_scalar dV = 1.0f;
 
     if(reconstructed_quantity.is_integrated_quantity())
     {
-      dA = static_cast<device_scalar>(_cam.get_pixel_size() * _cam.get_pixel_size());
-
-      dA *= reconstructed_quantity.get_unit_converter().area_conversion_factor();
+      // The multiplication with length_conversion_factor() is important to turn
+      // the integration along the line of sight from working in units of ckpc/h to
+      // kpc, which is what the implementation of the physical quantities use
+      // internally. This happens analogously with the area
+      // perpendicular to the line of sight dA.
+      dV = static_cast<device_scalar>(_cam.get_pixel_size() * _cam.get_pixel_size());
+      dV *= reconstructed_quantity.get_unit_converter().length_conversion_factor();
+      dV *= reconstructed_quantity.get_unit_converter().area_conversion_factor();
+    }
+    else
+    {
+      // Non-integrated quantities must be divided by the integration length,
+      // such that a mean is calculated
+      dV = 1.0 / static_cast<device_scalar>(z_range);
     }
 
     for(auto it = output.begin(); it != output.end(); ++it)
-      (*it) *= dA;
+      (*it) *= dV;
   }
 
 

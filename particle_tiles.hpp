@@ -277,6 +277,11 @@ private:
       std::size_t offset =
           static_cast<std::size_t>(_tiles[grid_uidx].s[2]);
 
+      if(already_placed_particles + offset >= _sorted_particles.size())
+      {
+        std::cout << "already_places_particles: " << already_placed_particles << " offset " << offset << " size " << _sorted_particles.size() << std::endl;
+        std::cout << _tiles[grid_uidx].s[1] << " " << _tiles[grid_uidx].s[2] << std::endl;
+      }
       assert(already_placed_particles + offset < _sorted_particles.size());
       _sorted_particles[already_placed_particles + offset] = current_particle;
 

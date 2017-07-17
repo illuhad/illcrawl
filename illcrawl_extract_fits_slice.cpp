@@ -48,7 +48,7 @@ int main(int argc, char** argv)
     illcrawl::util::fits<illcrawl::device_scalar> input_cube_file{input_filename};
 
     illcrawl::util::multi_array<illcrawl::device_scalar> input_cube;
-    input_cube_file.load<3>(input_cube);
+    input_cube_file.load(input_cube);
 
     if(input_cube.get_dimension() != 3)
       throw std::runtime_error("Input file is not a 3D fits data cube.");

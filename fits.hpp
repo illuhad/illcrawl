@@ -120,39 +120,36 @@ public:
   }
   
   /// Loads data from a fits file
-  /// \tparam N_dimensions The number of dimensions of the fits image that shall
-  /// be loaded
   /// \param out An array that will be used to store the loaded data. It will be
   /// automatically resized to the correct size and dimensions.
   /// \throws std::runtime_error if the data could not be loaded
-  template<std::size_t N_dimensions>
   void load(util::multi_array<T>& out) const
   {
-#if __cplusplus >= 201103L
-    static_assert(N_dimensions > 0, "Number of dimensions cannot be zero.");
-#else
-    assert(N_dimensions > 0);
-#endif
-    
     fitsfile* file;
     int status = 0;
     int bitpix, naxis_flag;
-    std::vector<long> naxes(N_dimensions, 0);
     
     if(!fits_open_file(&file, _filename.c_str(), READONLY, &status))
     {
-      if(!fits_get_img_param(file, N_dimensions, &bitpix, &naxis_flag, naxes.data(), 
+      int dimension = 0;
+
+      if(fits_get_img_dim(file, &dimension, &status))
+        throw std::runtime_error("Could not determine dimension of fits image");
+
+      std::vector<long> naxes(dimension, 0);
+
+      if(!fits_get_img_param(file, dimension, &bitpix, &naxis_flag, naxes.data(),
                              &status))
       {
         std::vector<std::size_t> array_sizes;
-        array_sizes.reserve(N_dimensions);
+        array_sizes.reserve(dimension);
         for(std::size_t i = 0; i < naxes.size(); ++i)
           array_sizes.push_back(static_cast<std::size_t>(naxes[i]));
         
         out = util::multi_array<T>(array_sizes);
         
-        long fpixel [N_dimensions];
-        for(std::size_t i = 0; i < N_dimensions; ++i)
+        long fpixel [dimension];
+        for(std::size_t i = 0; i < static_cast<std::size_t>(dimension); ++i)
           fpixel[i] = 1;
    
         fits_read_pix(file,

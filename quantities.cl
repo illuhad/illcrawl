@@ -24,6 +24,7 @@
 
 #include "interpolation.cl"
 #include "tabulated_function.cl"
+#include "integration.cl"
 
 #define X_H 0.76f
 
@@ -134,6 +135,91 @@ scalar get_spectral_brems_emission(scalar E,
   return emission;
 }
 
+/// Integrate over the X-ray flux within a given energy range
+/// \param E_min Start energy of the integration range [keV]
+/// \param E_max Final energy of the integration range [keV]
+/// \param rel_tol relative integration tolerance
+/// \param T the gas temperature [K]
+/// \param electron_abundance The electron abundance
+/// \param density The density [M_sun/kpc^3]
+/// \param luminosity_distance The luminosity distance from the observer to
+/// the gas cell [kpc]
+/// \param gaunt_table The gaunt factor table
+scalar integrate_spectral_xray_flux(scalar E_min,
+                                    scalar E_max,
+                                    scalar rel_tol,
+                                    scalar T,
+                                    scalar electron_abundance,
+                                    scalar density,
+                                    scalar luminosity_distance,
+                                    __read_only image2d_t gaunt_table)
+{
+
+
+  scalar emission = 0.0f;
+  scalar current_integration_position = E_min;
+  scalar integration_end = E_max;
+  scalar dE = (integration_end - current_integration_position) * rel_tol;
+  scalar range_begin_evaluation = get_spectral_brems_emission(current_integration_position,
+                                                              1.0f,
+                                                              T,
+                                                              electron_abundance,
+                                                              density,
+                                                              luminosity_distance,
+                                                              gaunt_table);
+
+  rkf_evaluation_points evaluation_points =
+      rkf_generate_evaluation_points(current_integration_position, dE);
+
+  while(current_integration_position < integration_end)
+  {
+    rkf_integrand_values values;
+    values.s0 = get_spectral_brems_emission(evaluation_points.s0,
+                                            1.0f,
+                                            T,
+                                            electron_abundance,
+                                            density,
+                                            luminosity_distance,
+                                            gaunt_table);
+    values.s1 = get_spectral_brems_emission(evaluation_points.s1,
+                                            1.0f,
+                                            T,
+                                            electron_abundance,
+                                            density,
+                                            luminosity_distance,
+                                            gaunt_table);
+    values.s2 = get_spectral_brems_emission(evaluation_points.s2,
+                                            1.0f,
+                                            T,
+                                            electron_abundance,
+                                            density,
+                                            luminosity_distance,
+                                            gaunt_table);
+    values.s3 = get_spectral_brems_emission(evaluation_points.s3,
+                                            1.0f,
+                                            T,
+                                            electron_abundance,
+                                            density,
+                                            luminosity_distance,
+                                            gaunt_table);
+
+    rkf_advance(&emission,
+                &current_integration_position,
+                &dE,
+                &range_begin_evaluation,
+                rel_tol,
+                1,
+                integration_end,
+                values,
+                &evaluation_points,
+                0.0,
+                1.e-3f,
+                100.f);
+  }
+
+  return emission;
+}
+
 /// \return The thermal Bremsstrahlung X-Ray count rate within an
 /// energy bin in units of 1/s/kpc^3/m^2
 ///  for a hydrogen plasma
@@ -179,13 +265,33 @@ __kernel void mean_temperature(
   }
 }
 
-/* ToDo: Fix this
+
+/// Calculates L*T with the X-ray flux L and temperature T
+/// in units of keV/s/kpc^3/m^2*K
+/// \param out Output array, must be at least of size \c num_elements
+/// \param num_elements number of data elements to process
+/// \param densities The densities in M_sun/kpc^3
+/// \param internal_energies The specific internal energies in (km/s)^2
+/// \param electron_abundances The electron abundances (dimensionless)
+/// \param z The redshift of the observed object
+/// \param luminosity_distance The luminosity distance of the observed
+/// object in kpc
+/// \param gaunt_table The tabulated thermally averaged gaunt factors
+/// \param E_min minimum energy for the energy integration [keV]
+/// \param E_max maximum energy for the energy integration [keV]
+/// \param num_samples Number of integration steps
 __kernel void luminosity_weighted_temperature(
-                            __global scalar* out,
-                            unsigned num_elements,
-                            __global scalar* densities,
-                            __global scalar* internal_energies,
-                            __global scalar* electron_abundances)
+                                         __global scalar* out,
+                                         unsigned num_elements,
+                                         __global scalar* densities,
+                                         __global scalar* internal_energies,
+                                         __global scalar* electron_abundances,
+                                         scalar z,
+                                         scalar luminosity_distance,
+                                         __read_only image2d_t gaunt_table,
+                                         scalar E_min,
+                                         scalar E_max,
+                                         int num_samples)
 {
   int tid = get_global_id(0);
 
@@ -196,10 +302,19 @@ __kernel void luminosity_weighted_temperature(
     scalar electron_abundance = electron_abundances[tid];
     scalar T = get_temperature(internal_energy, electron_abundance);
 
-    out[tid] = density * density * sqrt(T) * T;
+    out[tid] = T * integrate_spectral_xray_flux((1.f + z) * E_min,
+                                                (1.f + z) * E_max,
+                                                1.f / (scalar)num_samples,
+                                                T,
+                                                electron_abundance,
+                                                density,
+                                                luminosity_distance,
+                                                gaunt_table);
+
+
   }
 }
-*/
+
 
 
 /// Calculates the X-Ray flux within a given energy range by
@@ -238,24 +353,14 @@ __kernel void xray_flux(__global scalar* out,
     scalar electron_abundance = electron_abundances[tid];
     scalar T = get_temperature(internal_energy, electron_abundance);
 
-    scalar dE = (E_max - E_min) / num_samples;
-
-    scalar emission = 0.0f;
-    for(int i = 0; i < num_samples; ++i)
-    {
-      scalar current_photon_energy = E_min + (i + 0.5f) * dE;
-
-      emission += get_spectral_brems_emission((1.f + z) * current_photon_energy,
-                                              (1.f + z) * dE,
-                                              T,
-                                              electron_abundance,
-                                              density,
-                                              luminosity_distance,
-                                              gaunt_table);
-
-    }
-
-    out[tid] = emission;
+    out[tid] = integrate_spectral_xray_flux((1.f + z) * E_min,
+                                            (1.f + z) * E_max,
+                                            1.f / num_samples,
+                                            T,
+                                            electron_abundance,
+                                            density,
+                                            luminosity_distance,
+                                            gaunt_table);
   }
 }
 
@@ -304,6 +409,65 @@ __kernel void xray_spectral_flux(__global scalar* out,
   }
 }
 
+scalar get_chandra_xray_count_rate_with_temp(scalar density,
+                              scalar T,
+                              scalar electron_abundance,
+                              scalar z,
+                              scalar luminosity_distance,
+                              __read_only image2d_t gaunt_table,
+                              __read_only image1d_t arf_table,
+                              scalar arf_min_energy,
+                              int    arf_num_energy_bins,
+                              scalar arf_energy_bin_width,
+                              scalar channel_energy,
+                              scalar channel_energy_bin_width)
+{
+  // obtain arf value - the factor 1e-4 converts from cm^2 to m^2
+  scalar arf_value = evaluate_tabulated_function(arf_table,
+                                                 arf_min_energy,
+                                                 arf_energy_bin_width,
+                                                 channel_energy) * 1.e-4f;
+
+  scalar count_rate = get_spectral_brems_count_rate( (1.f + z)*channel_energy,
+                                                     (1.f + z)*channel_energy_bin_width,
+                                                     T,
+                                                     electron_abundance,
+                                                     density,
+                                                     luminosity_distance,
+                                                     gaunt_table) * arf_value;
+  return count_rate;
+
+}
+
+scalar get_chandra_xray_count_rate(scalar density,
+                              scalar internal_energy,
+                              scalar electron_abundance,
+                              scalar z,
+                              scalar luminosity_distance,
+                              __read_only image2d_t gaunt_table,
+                              __read_only image1d_t arf_table,
+                              scalar arf_min_energy,
+                              int    arf_num_energy_bins,
+                              scalar arf_energy_bin_width,
+                              scalar channel_energy,
+                              scalar channel_energy_bin_width)
+{
+  scalar T = get_temperature(internal_energy, electron_abundance);
+
+  return get_chandra_xray_count_rate_with_temp(density,
+                                               T,
+                                               electron_abundance,
+                                               z,
+                                               luminosity_distance,
+                                               gaunt_table,
+                                               arf_table,
+                                               arf_min_energy,
+                                               arf_num_energy_bins,
+                                               arf_energy_bin_width,
+                                               channel_energy,
+                                               channel_energy_bin_width);
+
+}
 
 /// Calculates the total count rate, as observed by the chandra
 /// observatory in units of 1/s/kpc^3 (the kpc^3 must be integrated
@@ -350,20 +514,21 @@ __kernel void chandra_xray_total_count_rate(__global scalar* out,
     // Integrate over the arf
     for(int i = 0; i < arf_num_energy_bins; ++i)
     {
-      scalar current_photon_energy = arf_min_energy + i * arf_energy_bin_width;
+      scalar channel_energy = arf_min_energy + i * arf_energy_bin_width;
 
-      scalar arf_value = evaluate_tabulated_function(arf_table,
-                                                     arf_min_energy,
-                                                     arf_energy_bin_width,
-                                                     current_photon_energy);
+      emission += get_chandra_xray_count_rate_with_temp(density,
+                                                        T,
+                                                        electron_abundance,
+                                                        z,
+                                                        luminosity_distance,
+                                                        gaunt_table,
+                                                        arf_table,
+                                                        arf_min_energy,
+                                                        arf_num_energy_bins,
+                                                        arf_energy_bin_width,
+                                                        channel_energy,
+                                                        arf_energy_bin_width);
 
-      emission += get_spectral_brems_count_rate((1.f + z)*current_photon_energy,
-                                                (1.f + z)*arf_energy_bin_width,
-                                                T,
-                                                electron_abundance,
-                                                density,
-                                                luminosity_distance,
-                                                gaunt_table) * arf_value;
 
     }
 
@@ -418,26 +583,69 @@ __kernel void chandra_xray_spectral_count_rate(__global scalar* out,
     scalar density = densities[tid];
     scalar internal_energy = internal_energies[tid];
     scalar electron_abundance = electron_abundances[tid];
-    scalar T = get_temperature(internal_energy, electron_abundance);
 
-    scalar arf_value = evaluate_tabulated_function(arf_table,
-                                                   arf_min_energy,
-                                                   arf_energy_bin_width,
-                                                   photon_energy);
-
-    out[tid] = get_spectral_brems_count_rate( (1.f + z)*photon_energy,
-                                              (1.f + z)*photon_energy_bin_width,
-                                              T,
-                                              electron_abundance,
-                                              density,
-                                              luminosity_distance,
-                                              gaunt_table) * arf_value;
+    out[tid] = get_chandra_xray_count_rate(density,
+                                           internal_energy,
+                                           electron_abundance,
+                                           z,
+                                           luminosity_distance,
+                                           gaunt_table,
+                                           arf_table,
+                                           arf_min_energy,
+                                           arf_num_energy_bins,
+                                           arf_energy_bin_width,
+                                           photon_energy,
+                                           photon_energy_bin_width);
 
 
   }
 }
 
-/// Sets the output to 1.f for all elements. Only usefule for
+
+__kernel void chandra_xray_spectral_flux(__global scalar* out,
+                                         unsigned num_elements,
+                                         __global scalar* densities,
+                                         __global scalar* internal_energies,
+                                         __global scalar* electron_abundances,
+                                         scalar z,
+                                         scalar luminosity_distance,
+                                         __read_only image2d_t gaunt_table,
+                                         __read_only image1d_t arf_table,
+                                         scalar arf_min_energy,
+                                         int    arf_num_energy_bins,
+                                         scalar arf_energy_bin_width,
+                                         scalar photon_energy,
+                                         scalar photon_energy_bin_width)
+{
+  int tid = get_global_id(0);
+
+  if(tid < num_elements)
+  {
+    scalar density = densities[tid];
+    scalar internal_energy = internal_energies[tid];
+    scalar electron_abundance = electron_abundances[tid];
+
+    scalar count_rate =
+        get_chandra_xray_count_rate(density,
+                                    internal_energy,
+                                    electron_abundance,
+                                    z,
+                                    luminosity_distance,
+                                    gaunt_table,
+                                    arf_table,
+                                    arf_min_energy,
+                                    arf_num_energy_bins,
+                                    arf_energy_bin_width,
+                                    photon_energy,
+                                    photon_energy_bin_width);
+    // ToDo fix units by dividung by m^2, but by what?
+    out[tid] = photon_energy * count_rate;
+
+  }
+}
+
+
+/// Sets the output to 1.f for all elements. Only useful for
 /// testing the interpolation quality.
 /// \param out Output array, with at least \c num_elements elements
 /// \param num_elements The number of elements
@@ -456,6 +664,21 @@ __kernel void identity(__global scalar* out,
   }
 }
 
+/// Sets the output to the input quantity for all elements
+/// \param out Output array, with at least \c num_elements elements
+/// \param num_elements The number of elements
+/// \param input The input quantity
+__kernel void unprocessed_quantity(__global scalar* out,
+                                   unsigned num_elements,
+                                   __global scalar* input)
+{
+  int tid = get_global_id(0);
+
+  if(tid < num_elements)
+  {
+    out[tid] = input[tid];
+  }
+}
 
 
 #endif

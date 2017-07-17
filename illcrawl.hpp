@@ -246,7 +246,7 @@ public:
          boost::program_options::value<std::string>(&_quantity_selection)->default_value(_quantity_selection),
          "The quantity which shall be used for reconstruction. Allowed values: "
          "chandra_count_rate, xray_flux, chandra_spectral_count_rate, "
-         "xray_spectral_flux, mean_temperature, luminosity_weighted_temperature")
+         "xray_spectral_flux, mean_temperature, luminosity_weighted_temperature, mean_density, mass")
         ("quantity.xray_spectral_flux.energy",
          boost::program_options::value<math::scalar>(&_xray_spectral_flux_energy)->default_value(
            _xray_spectral_flux_energy),
@@ -274,7 +274,15 @@ public:
         ("quantity.xray_flux.num_samples",
          boost::program_options::value<unsigned>(&_xray_flux_num_samples)->default_value(
            _xray_flux_num_samples),
-         "Number of samples for the energy integration of the xray_flux quantity");
+         "Number of samples for the energy integration of the xray_flux quantity")
+        ("quantity.luminosity_weighted_temperature.min_energy",
+         boost::program_options::value<math::scalar>(&_luminosity_weighted_temp_min_energy)->default_value(
+           _luminosity_weighted_temp_min_energy),
+         "Start of energy integration range for the luminosity_weighted_temperature quantity [keV]")
+        ("quantity.luminosity_weighted_temperature.max_energy",
+         boost::program_options::value<math::scalar>(&_luminosity_weighted_temp_max_energy)->default_value(
+           _luminosity_weighted_temp_max_energy),
+         "End of energy integration range for the luminosity_weighted_temperature quantity [keV]");
   }
 
   std::unique_ptr<reconstruction_quantity::quantity> create_quantity(const illcrawl_app& app) const
@@ -310,11 +318,8 @@ public:
     }
     else if(_quantity_selection == "xray_flux")
     {
-      assert_greater_zero(this->_xray_flux_min_energy, "Integration minimum energy must be > 0");
-      assert_greater_zero(this->_xray_flux_max_energy, "Integration max energy must be > 0");
       assert_greater_zero(this->_xray_flux_num_samples, "Number of integration samples must be > 0");
-      assert_greater(this->_xray_flux_max_energy, this->_xray_flux_min_energy,
-                     "Integration maximum energy must be greater than the integration minimum energy");
+      assert_valid_integration_range(_xray_flux_min_energy, _xray_flux_max_energy);
 
       return std::unique_ptr<reconstruction_quantity::xray_flux>{
         new reconstruction_quantity::xray_flux{
@@ -355,15 +360,55 @@ public:
         }
       };
     }
+    else if(_quantity_selection == "mean_density")
+    {
+      return std::unique_ptr<reconstruction_quantity::mean_density>{
+        new reconstruction_quantity::mean_density{
+          &(app.get_data_loader()),
+          app.get_unit_converter()
+        }
+      };
+    }
+    else if(_quantity_selection == "mass")
+    {
+      return std::unique_ptr<reconstruction_quantity::mass>{
+        new reconstruction_quantity::mass{
+          &(app.get_data_loader()),
+          app.get_unit_converter()
+        }
+      };
+    }
     else if(_quantity_selection == "luminosity_weighted_temperature")
     {
-      throw std::runtime_error("luminosity_weighted_temperature is currently partially unimplemented.");
+      assert_valid_integration_range(_luminosity_weighted_temp_min_energy,
+                                     _luminosity_weighted_temp_max_energy);
+
+      return std::unique_ptr<reconstruction_quantity::luminosity_weighted_temperature>{
+        new reconstruction_quantity::luminosity_weighted_temperature{
+          &(app.get_data_loader()),
+          app.get_unit_converter(),
+          app.get_environment().get_compute_device(),
+          app.get_redshift(),
+          app.get_luminosity_distance(),
+          _luminosity_weighted_temp_min_energy,
+          _luminosity_weighted_temp_max_energy
+        }
+      };
     }
     else
       throw std::invalid_argument("Unknwon quantity: " + _quantity_selection);
   }
 
 private:
+  void assert_valid_integration_range(math::scalar min,
+                                      math::scalar max) const
+  {
+    assert_greater_zero(min, "Start of integration range must be > 0");
+    assert_greater_zero(max, "End of integration range must be > 0");
+    assert_greater(max, min,
+                   "End of integration range must be > than start of integration range");
+  }
+
   template<class T>
   void assert_greater_zero(T x,  const std::string& message) const
   {
@@ -389,6 +434,9 @@ private:
 
   math::scalar _chandra_spectral_count_rate_energy = 1.0;
   math::scalar _chandra_spectral_count_rate_energy_bin_width = 0.1;
+
+  math::scalar _luminosity_weighted_temp_min_energy = 0.1;
+  math::scalar _luminosity_weighted_temp_max_energy = 10.0;
 };
 
 }

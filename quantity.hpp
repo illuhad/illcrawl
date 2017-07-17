@@ -95,16 +95,15 @@ private:
   unit_converter _converter;
 };
 
-class density_temperature_based_quantity : public illustris_quantity
+class density_based_quantity : public illustris_quantity
 {
 public:
-  density_temperature_based_quantity(const io::illustris_data_loader* data,
-                                     const unit_converter& converter)
+  density_based_quantity(const io::illustris_data_loader* data,
+                         const unit_converter& converter)
       : illustris_quantity{
             data,
             std::vector<std::string>{
-              io::illustris_data_loader::get_density_identifier(),
-              io::illustris_data_loader::get_internal_energy_identifier()
+              io::illustris_data_loader::get_density_identifier()
             },
             converter
           }
@@ -114,13 +113,12 @@ public:
   {
     return std::vector<math::scalar>{
       {
-        this->get_unit_converter().density_conversion_factor(),
-        1.0
+        this->get_unit_converter().density_conversion_factor()
       }
     };
   }
 
-  virtual ~density_temperature_based_quantity(){}
+  virtual ~density_based_quantity(){}
 };
 
 class density_temperature_electron_abundance_based_quantity : public illustris_quantity
@@ -372,13 +370,26 @@ private:
 
 };
 
-/*
-class luminosity_weighted_temperature : public density_temperature_electron_abundance_based_quantity
+
+class luminosity_weighted_temperature : public xray_flux_based_quantity
 {
 public:
   luminosity_weighted_temperature(const io::illustris_data_loader* data,
-                                  const unit_converter& converter)
-      : density_temperature_electron_abundance_based_quantity{data, converter}
+                                  const unit_converter& converter,
+                                  const qcl::device_context_ptr& ctx,
+                                  math::scalar redshift,
+                                  math::scalar luminosity_distance,
+                                  math::scalar min_energy,
+                                  math::scalar max_energy)
+      : xray_flux_based_quantity{
+          data,
+          converter,
+          ctx,
+          redshift,
+          luminosity_distance
+        },
+        _min_energy{min_energy},
+        _max_energy{max_energy}
   {}
 
   virtual qcl::kernel_ptr get_kernel(const qcl::device_context_ptr& ctx) const override
@@ -386,13 +397,21 @@ public:
     return ctx->get_kernel("luminosity_weighted_temperature");
   }
 
-  virtual bool is_integrated_quantity() const override
+  virtual void push_additional_kernel_args(qcl::kernel_argument_list& args) const override
   {
-    return true;
+    this->push_xray_flux_kernel_args(args);
+
+    args.push(static_cast<device_scalar>(_min_energy));
+    args.push(static_cast<device_scalar>(_max_energy));
+    args.push(static_cast<cl_int>(100));
   }
 
   virtual ~luminosity_weighted_temperature(){}
-};*/
+
+private:
+  math::scalar _min_energy;
+  math::scalar _max_energy;
+};
 
 class mean_temperature : public density_temperature_electron_abundance_based_quantity
 {
@@ -409,12 +428,12 @@ public:
   virtual ~mean_temperature(){}
 };
 
-class interpolation_weight : public density_temperature_based_quantity
+class interpolation_weight : public density_based_quantity
 {
 public:
   interpolation_weight(const io::illustris_data_loader* data,
                        const unit_converter& converter)
-      : density_temperature_based_quantity{data, converter}
+      : density_based_quantity{data, converter}
   {}
 
   virtual qcl::kernel_ptr get_kernel(const qcl::device_context_ptr& ctx) const override
@@ -424,6 +443,45 @@ public:
 
   virtual ~interpolation_weight(){}
 };
+
+class mean_density : public density_based_quantity
+{
+public:
+  mean_density(const io::illustris_data_loader* data,
+               const unit_converter& converter)
+    : density_based_quantity{data, converter}
+  {}
+
+  virtual qcl::kernel_ptr get_kernel(const qcl::device_context_ptr &ctx) const override
+  {
+    return ctx->get_kernel("unprocessed_quantity");
+  }
+
+  virtual ~mean_density(){}
+};
+
+class mass : public density_based_quantity
+{
+public:
+  mass(const io::illustris_data_loader* data,
+       const unit_converter& converter)
+      : density_based_quantity{data, converter}
+  {}
+
+  virtual qcl::kernel_ptr get_kernel(const qcl::device_context_ptr &ctx) const override
+  {
+    return ctx->get_kernel("unprocessed_quantity");
+  }
+
+  virtual bool is_integrated_quantity() const override
+  {
+    return true;
+  }
+
+  virtual ~mass(){}
+};
+
+
 
 
 class quantity_transformation

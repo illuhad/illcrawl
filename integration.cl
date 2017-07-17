@@ -22,10 +22,10 @@
 #ifndef INTEGRATION_CL
 #define INTEGRATION_CL
 
-typedef float scalar;
-typedef float4 integrand_values;
-typedef float4 evaluation_points;
-typedef float4 vector4;
+#include "types.cl"
+typedef vector4 rkf_integrand_values;
+typedef vector4 rkf_evaluation_points;
+
 
 // epsilon defines an additional margin that is added
 // on the position when we have reached the integration
@@ -35,8 +35,16 @@ typedef float4 vector4;
 #define MINIMUM_STEPSIZE 0.2f
 #define MAXIMUM_STEPSIZE 100.f
 
-
-
+rkf_evaluation_points rkf_generate_evaluation_points(scalar current_position,
+                                                     scalar current_step_size)
+{
+  rkf_evaluation_points result;
+  result.s0 = current_position + 3.f / 8.f * current_step_size;
+  result.s1 = current_position + 12.f/13.f * current_step_size;
+  result.s2 = current_position +             current_step_size;
+  result.s3 = current_position + 0.5f      * current_step_size;
+  return result;
+}
 
 void rkf_advance(scalar* integration_state,
                  scalar* current_position,
@@ -45,9 +53,13 @@ void rkf_advance(scalar* integration_state,
                  scalar tolerance,
                  int is_relative_tolerance,
                  scalar integration_end,
-                 integrand_values evaluations,
-                 evaluation_points* next_evaluation_points)
+                 rkf_integrand_values evaluations,
+                 rkf_evaluation_points* next_evaluation_points,
+                 scalar epsilon,
+                 scalar min_stepsize,
+                 scalar max_stepsize)
 {
+
   scalar delta4 =
        + 25.f/216.f    * (*range_begin_evaluation)
        + 1408.f/2565.f * evaluations.s0
@@ -83,13 +95,13 @@ void rkf_advance(scalar* integration_state,
 
   scalar new_step_size = s * (*current_step_size);
 
-  if(new_step_size < MINIMUM_STEPSIZE)
+  if(new_step_size < min_stepsize)
   {
-    new_step_size = MINIMUM_STEPSIZE;
+    new_step_size = min_stepsize;
   }
-  else if(new_step_size > MAXIMUM_STEPSIZE)
+  else if(new_step_size > max_stepsize)
   {
-    new_step_size = MAXIMUM_STEPSIZE;
+    new_step_size = max_stepsize;
   }
 
   // Correct s in case we have reached the min/max stepsize
@@ -109,30 +121,29 @@ void rkf_advance(scalar* integration_state,
 
   *current_step_size = new_step_size;
 
-  if(*current_position + (*current_step_size) > integration_end)
+  if(*current_position + (*current_step_size) >= integration_end)
     // The epsilon's job is to make sure that the condition
     // position < integration range turns false and a integration loop
     // does not turn into an infinite loop.
-    *current_step_size = integration_end - *current_position + EPSILON;
+    *current_step_size = integration_end - *current_position + epsilon;
 
-  next_evaluation_points->s0 = *current_position + 3.f/8.f   * (*current_step_size);
-  next_evaluation_points->s1 = *current_position + 12.f/13.f * (*current_step_size);
-  next_evaluation_points->s2 = *current_position +             (*current_step_size);
-  next_evaluation_points->s3 = *current_position + 0.5f      * (*current_step_size);
+  *next_evaluation_points = rkf_generate_evaluation_points(*current_position, *current_step_size);
 }
+
+
 
 
 
 __kernel void runge_kutta_fehlberg(__global scalar* integration_state,
                                    __global scalar* current_position,
                                    __global scalar* current_step_size,
-                                   __global integrand_values* evaluations,
+                                   __global rkf_integrand_values* evaluations,
                                    __global scalar* range_begin_evaluation,
                                    int num_integrators,
                                    scalar tolerance,
                                    int is_relative_tolerance,
                                    scalar integration_end,
-                                   __global evaluation_points* next_evaluation_points_out,
+                                   __global rkf_evaluation_points* next_evaluation_points_out,
                                    __global int* is_integrator_still_running)
 {
   int gid = get_global_id(0);
@@ -149,9 +160,9 @@ __kernel void runge_kutta_fehlberg(__global scalar* integration_state,
     if(position < integration_end)
     {
 
-      integrand_values evals = evaluations[gid];
+      rkf_integrand_values evals = evaluations[gid];
 
-      evaluation_points next_evaluation_points;
+      rkf_evaluation_points next_evaluation_points;
       rkf_advance(&state,
                   &position,
                   &stepsize,
@@ -159,7 +170,10 @@ __kernel void runge_kutta_fehlberg(__global scalar* integration_state,
                   tolerance, is_relative_tolerance,
                   integration_end,
                   evals,
-                  &next_evaluation_points);
+                  &next_evaluation_points,
+                  EPSILON,
+                  MINIMUM_STEPSIZE,
+                  MAXIMUM_STEPSIZE);
 
       next_evaluation_points_out[gid] = next_evaluation_points;
       integration_state[gid] = state;
@@ -174,7 +188,7 @@ __kernel void runge_kutta_fehlberg(__global scalar* integration_state,
 }
 
 __kernel void construct_evaluation_points_over_camera_plane(
-                                       __global evaluation_points* integrator_required_evaluation_points,
+                                       __global rkf_evaluation_points* integrator_required_evaluation_points,
                                        __global int* cumulative_num_running_integrators,
                                        __global int* is_integrator_still_running,
                                        vector4 camera_look_at,
@@ -197,7 +211,7 @@ __kernel void construct_evaluation_points_over_camera_plane(
                       + gid_x * pixel_size * camera_x_basis
                       + gid_y * pixel_size * camera_y_basis;
 
-    evaluation_points required_z_values =
+    rkf_evaluation_points required_z_values =
         integrator_required_evaluation_points[integrator_id];
 
     vector4 eval_points [4];
@@ -224,7 +238,7 @@ __kernel void gather_integrand_evaluations(__global scalar* reconstructor_result
                                            __global int* cumulative_num_running_integrators,
                                            __global int* is_integrator_running,
                                            int num_integrators,
-                                           __global integrand_values* evaluations_out)
+                                           __global rkf_integrand_values* evaluations_out)
 {
   int gid = get_global_id(0);
 
@@ -233,7 +247,7 @@ __kernel void gather_integrand_evaluations(__global scalar* reconstructor_result
     if(is_integrator_running[gid])
     {
       int evaluation_id = cumulative_num_running_integrators[gid];
-      integrand_values evaluations;
+      rkf_integrand_values evaluations;
       evaluations.s0 = reconstructor_results[4 * evaluation_id + 0];
       evaluations.s1 = reconstructor_results[4 * evaluation_id + 1];
       evaluations.s2 = reconstructor_results[4 * evaluation_id + 2];
