@@ -72,6 +72,7 @@ public:
                                             {
                                               "luminosity_weighted_temperature",
                                               "xray_flux",
+                                              "xray_photon_flux",
                                               "xray_spectral_flux",
                                               "identity",
                                               "mean_temperature",

@@ -135,6 +135,13 @@ scalar get_spectral_brems_emission(scalar E,
   return emission;
 }
 
+
+typedef enum
+{
+  XRAY_FLUX = 0,
+  PHOTON_FLUX = 1
+} flux_type;
+
 /// Integrate over the X-ray flux within a given energy range
 /// \param E_min Start energy of the integration range [keV]
 /// \param E_max Final energy of the integration range [keV]
@@ -145,14 +152,16 @@ scalar get_spectral_brems_emission(scalar E,
 /// \param luminosity_distance The luminosity distance from the observer to
 /// the gas cell [kpc]
 /// \param gaunt_table The gaunt factor table
-scalar integrate_spectral_xray_flux(scalar E_min,
-                                    scalar E_max,
-                                    scalar rel_tol,
-                                    scalar T,
-                                    scalar electron_abundance,
-                                    scalar density,
-                                    scalar luminosity_distance,
-                                    __read_only image2d_t gaunt_table)
+/// \param type whether to calculate xray flux [keV/s/m^2] or photon fluxes [photons/s/m^2]
+scalar integrate_spectral_flux(scalar E_min,
+                               scalar E_max,
+                               scalar rel_tol,
+                               scalar T,
+                               scalar electron_abundance,
+                               scalar density,
+                               scalar luminosity_distance,
+                               __read_only image2d_t gaunt_table,
+                               flux_type type)
 {
 
 
@@ -167,6 +176,9 @@ scalar integrate_spectral_xray_flux(scalar E_min,
                                                               density,
                                                               luminosity_distance,
                                                               gaunt_table);
+  if(type == PHOTON_FLUX)
+    // divide by photon energy to obtain the number of photons
+    range_begin_evaluation /= current_integration_position;
 
   rkf_evaluation_points evaluation_points =
       rkf_generate_evaluation_points(current_integration_position, dE);
@@ -202,6 +214,12 @@ scalar integrate_spectral_xray_flux(scalar E_min,
                                             density,
                                             luminosity_distance,
                                             gaunt_table);
+
+    if(type == PHOTON_FLUX)
+    {
+      // Divide fluxes by energies to obtain photon counts
+      values /= evaluation_points;
+    }
 
     rkf_advance(&emission,
                 &current_integration_position,
@@ -302,14 +320,15 @@ __kernel void luminosity_weighted_temperature(
     scalar electron_abundance = electron_abundances[tid];
     scalar T = get_temperature(internal_energy, electron_abundance);
 
-    out[tid] = T * integrate_spectral_xray_flux((1.f + z) * E_min,
-                                                (1.f + z) * E_max,
-                                                1.f / (scalar)num_samples,
-                                                T,
-                                                electron_abundance,
-                                                density,
-                                                luminosity_distance,
-                                                gaunt_table);
+    out[tid] = T * integrate_spectral_flux((1.f + z) * E_min,
+                                           (1.f + z) * E_max,
+                                           1.f / (scalar)num_samples,
+                                           T,
+                                           electron_abundance,
+                                           density,
+                                           luminosity_distance,
+                                           gaunt_table,
+                                           XRAY_FLUX);
 
 
   }
@@ -353,14 +372,15 @@ __kernel void xray_flux(__global scalar* out,
     scalar electron_abundance = electron_abundances[tid];
     scalar T = get_temperature(internal_energy, electron_abundance);
 
-    out[tid] = integrate_spectral_xray_flux((1.f + z) * E_min,
-                                            (1.f + z) * E_max,
-                                            1.f / num_samples,
-                                            T,
-                                            electron_abundance,
-                                            density,
-                                            luminosity_distance,
-                                            gaunt_table);
+    out[tid] = integrate_spectral_flux((1.f + z) * E_min,
+                                       (1.f + z) * E_max,
+                                       1.f / num_samples,
+                                       T,
+                                       electron_abundance,
+                                       density,
+                                       luminosity_distance,
+                                       gaunt_table,
+                                       XRAY_FLUX);
   }
 }
 
@@ -602,20 +622,32 @@ __kernel void chandra_xray_spectral_count_rate(__global scalar* out,
 }
 
 
-__kernel void chandra_xray_spectral_flux(__global scalar* out,
-                                         unsigned num_elements,
-                                         __global scalar* densities,
-                                         __global scalar* internal_energies,
-                                         __global scalar* electron_abundances,
-                                         scalar z,
-                                         scalar luminosity_distance,
-                                         __read_only image2d_t gaunt_table,
-                                         __read_only image1d_t arf_table,
-                                         scalar arf_min_energy,
-                                         int    arf_num_energy_bins,
-                                         scalar arf_energy_bin_width,
-                                         scalar photon_energy,
-                                         scalar photon_energy_bin_width)
+/// Calculates the X-Ray photon flux within a given energy range by
+/// integrating over a number of energy bins. The result will be
+/// in units of photons/s/kpc^3/cm^2
+/// \param out Output array, must be at least of size \c num_elements
+/// \param num_elements number of data elements to process
+/// \param densities The densities in M_sun/kpc^3
+/// \param internal_energies The specific internal energies in (km/s)^2
+/// \param electron_abundances The electron abundances (dimensionless)
+/// \param z The redshift of the observed object
+/// \param luminosity_distance The luminosity distance of the observed
+/// object in kpc
+/// \param gaunt_table The tabulated thermally averaged gaunt factors
+/// \param E_min minimum integration energy in keV
+/// \param E_max maximum integration energy in keV
+/// \param num_samples The number of samples for the integration
+__kernel void xray_photon_flux(__global scalar* out,
+                               unsigned num_elements,
+                               __global scalar* densities,
+                               __global scalar* internal_energies,
+                               __global scalar* electron_abundances,
+                               scalar z,
+                               scalar luminosity_distance,
+                               __read_only image2d_t gaunt_table,
+                               scalar E_min,
+                               scalar E_max,
+                               int num_samples)
 {
   int tid = get_global_id(0);
 
@@ -624,22 +656,20 @@ __kernel void chandra_xray_spectral_flux(__global scalar* out,
     scalar density = densities[tid];
     scalar internal_energy = internal_energies[tid];
     scalar electron_abundance = electron_abundances[tid];
+    scalar T = get_temperature(internal_energy, electron_abundance);
 
-    scalar count_rate =
-        get_chandra_xray_count_rate(density,
-                                    internal_energy,
-                                    electron_abundance,
-                                    z,
-                                    luminosity_distance,
-                                    gaunt_table,
-                                    arf_table,
-                                    arf_min_energy,
-                                    arf_num_energy_bins,
-                                    arf_energy_bin_width,
-                                    photon_energy,
-                                    photon_energy_bin_width);
-    // ToDo fix units by dividung by m^2, but by what?
-    out[tid] = photon_energy * count_rate;
+
+    // The factor of 1.e-4f converts from photons/s/m^2/kpc^3
+    // to photons/s/cm^2/kpc^3
+    out[tid] = integrate_spectral_flux((1.f + z) * E_min,
+                                       (1.f + z) * E_max,
+                                       1.f / num_samples,
+                                       T,
+                                       electron_abundance,
+                                       density,
+                                       luminosity_distance,
+                                       gaunt_table,
+                                       PHOTON_FLUX) * 1.e-4f;
 
   }
 }

@@ -282,10 +282,17 @@ private:
 };
 
 
-class xray_flux : public xray_flux_based_quantity
+enum class flux_type
+{
+  XRAY_FLUX,
+  XRAY_PHOTON_FLUX
+};
+
+template<flux_type Flux_type>
+class flux : public xray_flux_based_quantity
 {
 public:
-  xray_flux(const io::illustris_data_loader* data,
+  flux(const io::illustris_data_loader* data,
             const unit_converter& converter,
             const qcl::device_context_ptr& ctx,
             math::scalar redshift,
@@ -307,7 +314,12 @@ public:
 
   virtual qcl::kernel_ptr get_kernel(const qcl::device_context_ptr& ctx) const override
   {
-    return ctx->get_kernel("xray_flux");
+    if(Flux_type == flux_type::XRAY_FLUX)
+      return ctx->get_kernel("xray_flux");
+    else if(Flux_type == flux_type::XRAY_PHOTON_FLUX)
+      return ctx->get_kernel("xray_photon_flux");
+    else
+      throw std::runtime_error("Invalid flux type!");
   }
 
   virtual void push_additional_kernel_args(qcl::kernel_argument_list& args) const override
@@ -319,13 +331,16 @@ public:
     args.push(static_cast<cl_int>(_num_samples));
   }
 
-  virtual ~xray_flux(){}
+  virtual ~flux(){}
 
 private:
   math::scalar _min_energy;
   math::scalar _max_energy;
   unsigned _num_samples;
 };
+
+using xray_flux = flux<flux_type::XRAY_FLUX>;
+using xray_photon_flux = flux<flux_type::XRAY_PHOTON_FLUX>;
 
 
 class xray_spectral_flux : public xray_flux_based_quantity

@@ -244,9 +244,16 @@ public:
     options.add_options()
         ("quantity,q",
          boost::program_options::value<std::string>(&_quantity_selection)->default_value(_quantity_selection),
-         "The quantity which shall be used for reconstruction. Allowed values: "
-         "chandra_count_rate, xray_flux, chandra_spectral_count_rate, "
-         "xray_spectral_flux, mean_temperature, luminosity_weighted_temperature, mean_density, mass")
+         "The quantity which shall be used for reconstruction. Allowed values: \n"
+         "chandra_count_rate: count rate as seen by chandra, taking into account chandra's ACIS-I instrumental response [counts/s]\n"
+         "xray_flux: The emitted xray flux [keV/s/m^2]\n"
+         "xray_photon_flux: The emitted photon flux. Note that unlike xray_flux, this is per cm^2. [photons/s/cm^2]\n"
+         "chandra_spectral_count_rate: The count rate as seen by chandra's ACIS-I within an energy channel [counts/]\n"
+         "xray_spectral_flux: The emitted xray flux within an energy channel [keV/s/m^2]\n"
+         "mean_temperature: The mean temperature along the line of sight [K]\n"
+         "luminosity_weighted_temperature: Calculates xray_flux*temperature along the line of sight. [keV/s/m^2*K]\n"
+         "mean_density: The mean density along the line of sight [M_sun/kpc^3]\n"
+         "mass: The total mass along the line of sight [M_sun]")
         ("quantity.xray_spectral_flux.energy",
          boost::program_options::value<math::scalar>(&_xray_spectral_flux_energy)->default_value(
            _xray_spectral_flux_energy),
@@ -275,6 +282,18 @@ public:
          boost::program_options::value<unsigned>(&_xray_flux_num_samples)->default_value(
            _xray_flux_num_samples),
          "Number of samples for the energy integration of the xray_flux quantity")
+        ("quantity.xray_photon_flux.min_energy",
+         boost::program_options::value<math::scalar>(&_xray_photon_flux_min_energy)->default_value(
+           _xray_photon_flux_min_energy),
+         "Start of energy integration range for the xray_photon_flux quantity [keV]")
+        ("quantity.xray_photon_flux.max_energy",
+         boost::program_options::value<math::scalar>(&_xray_photon_flux_max_energy)->default_value(
+           _xray_photon_flux_max_energy),
+         "End of energy integration range for the xray_photon_flux quantity [keV]")
+        ("quantity.xray_photon_flux.num_samples",
+         boost::program_options::value<unsigned>(&_xray_photon_flux_num_samples)->default_value(
+           _xray_photon_flux_num_samples),
+         "Number of samples for the energy integration of the xray_photon_flux quantity")
         ("quantity.luminosity_weighted_temperature.min_energy",
          boost::program_options::value<math::scalar>(&_luminosity_weighted_temp_min_energy)->default_value(
            _luminosity_weighted_temp_min_energy),
@@ -331,6 +350,25 @@ public:
             _xray_flux_min_energy,
             _xray_flux_max_energy,
             _xray_flux_num_samples
+        }
+      };
+    }
+    else if(_quantity_selection == "xray_photon_flux")
+    {
+      assert_greater_zero(this->_xray_photon_flux_num_samples, "Number of integration samples must be > 0");
+      assert_greater_zero(this->_xray_photon_flux_min_energy, "Minimum integration energy for photon fluxes must be > 0");
+      assert_valid_integration_range(_xray_photon_flux_min_energy, _xray_photon_flux_max_energy);
+
+      return std::unique_ptr<reconstruction_quantity::xray_photon_flux>{
+        new reconstruction_quantity::xray_photon_flux{
+            &(app.get_data_loader()),
+            app.get_unit_converter(),
+            app.get_environment().get_compute_device(),
+            app.get_redshift(),
+            app.get_luminosity_distance(),
+            _xray_photon_flux_min_energy,
+            _xray_photon_flux_max_energy,
+            _xray_photon_flux_num_samples
         }
       };
     }
@@ -403,10 +441,17 @@ private:
   void assert_valid_integration_range(math::scalar min,
                                       math::scalar max) const
   {
-    assert_greater_zero(min, "Start of integration range must be > 0");
-    assert_greater_zero(max, "End of integration range must be > 0");
+    assert_greater_equal_zero(min, "Start of integration range must be > 0");
+    assert_greater_equal_zero(max, "End of integration range must be > 0");
     assert_greater(max, min,
                    "End of integration range must be > than start of integration range");
+  }
+
+  template<class T>
+  void assert_greater_equal_zero(T x,  const std::string& message) const
+  {
+    if(x < static_cast<T>(0))
+      throw std::invalid_argument(message);
   }
 
   template<class T>
@@ -428,6 +473,10 @@ private:
   math::scalar _xray_flux_min_energy = 0.1;
   math::scalar _xray_flux_max_energy = 10.0;
   unsigned _xray_flux_num_samples = 100;
+
+  math::scalar _xray_photon_flux_min_energy = 0.1;
+  math::scalar _xray_photon_flux_max_energy = 10.0;
+  unsigned _xray_photon_flux_num_samples = 100;
 
   math::scalar _xray_spectral_flux_energy = 1.0;
   math::scalar _xray_spectral_flux_energy_bin_width = 0.1;
