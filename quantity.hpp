@@ -339,7 +339,7 @@ private:
   unsigned _num_samples;
 };
 
-using xray_flux = flux<flux_type::XRAY_FLUX>;
+using xray_flux        = flux<flux_type::XRAY_FLUX>;
 using xray_photon_flux = flux<flux_type::XRAY_PHOTON_FLUX>;
 
 
