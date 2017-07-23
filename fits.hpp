@@ -24,6 +24,7 @@
 #include <string>
 #include <stdexcept>
 #include <vector>
+#include <memory>
 
 #include "multi_array.hpp"
 
@@ -34,6 +35,56 @@ namespace util{
 template<typename Scalar_type>
 struct fits_datatype
 {};
+
+template<>
+struct fits_datatype<unsigned long long>
+{
+  static int image_type()
+  { return LONGLONG_IMG; }
+
+  static int datatype()
+  { return TLONGLONG; }
+};
+
+template<>
+struct fits_datatype<long long>
+{
+  static int image_type()
+  { return LONGLONG_IMG; }
+
+  static int datatype()
+  { return TLONGLONG; }
+};
+
+template<>
+struct fits_datatype<unsigned>
+{
+  static int image_type()
+  { return LONG_IMG; }
+
+  static int datatype()
+  { return TUINT; }
+};
+
+template<>
+struct fits_datatype<long>
+{
+  static int image_type()
+  { return LONG_IMG; }
+
+  static int datatype()
+  { return TLONG; }
+};
+
+template<>
+struct fits_datatype<int>
+{
+  static int image_type()
+  { return LONG_IMG; }
+
+  static int datatype()
+  { return TINT; }
+};
 
 template<>
 struct fits_datatype<float>
@@ -55,6 +106,27 @@ struct fits_datatype<double>
   { return TDOUBLE; }
 };
 
+template<>
+struct fits_datatype<const char*>
+{
+  static int datatype()
+  { return TSTRING; }
+};
+
+template<>
+struct fits_datatype<char*>
+{
+  static int datatype()
+  { return TSTRING; }
+};
+
+template<std::size_t N>
+struct fits_datatype<char [N]>
+{
+  static int datatype()
+  { return fits_datatype<char*>::datatype(); }
+};
+
 static std::string fits_error(int error_code)
 {
   char descr[30];
@@ -66,8 +138,63 @@ static std::string fits_error(int error_code)
   return result;
 }
 
+class fits_header
+{
+public:
+  fits_header(const std::string& filename)
+    : _filename{filename}, _file{nullptr}
+  {
+    int status = 0;
+    if(fits_open_file(&_file, _filename.c_str(), READWRITE, &status))
+      throw std::runtime_error{"fits_header: Could not open fits file "+filename};
+  }
+
+  ~fits_header()
+  {
+    int status = 0;
+    if(_file != nullptr)
+      fits_close_file(_file, &status);
+  }
+
+  template<class T>
+  void set_entry(const std::string& name,
+                 const T& value,
+                 const std::string& comment = "")
+  {
+    assert(_file != nullptr);
+
+    int status = 0;
+    if(fits_update_key(_file,
+                       fits_datatype<T>::datatype(),
+                       name.c_str(),
+                       const_cast<T*>(&value),
+                       comment.c_str(), &status))
+      throw std::runtime_error("Error while updating fits key: "+fits_error(status));
+  }
+
+  void set_entry(const std::string& name,
+                 const std::string& value,
+                 const std::string& comment = "")
+  {
+    assert(_file != nullptr);
+
+    const char* val = value.c_str();
+    int status = 0;
+    if(fits_update_key(_file,
+                       fits_datatype<char*>::datatype(),
+                       name.c_str(),
+                       const_cast<char*>(val),
+                       comment.c_str(), &status))
+      throw std::runtime_error("Error while updating fits key: "+fits_error(status));
+  }
+
+private:
+  std::string _filename;
+  fitsfile* _file;
+};
+
 /// Implements loading and saving fits images. It is the responsibility of the
-/// user to take care of parallelization effects, i.e. preventing two processes 
+/// user to take care of parallelization effects, i.e. preventing two processes
 /// from saving to the same file at the same time or distributing loaded data
 /// among computing processes.
 /// \tparam T the datatype of the fits image. If the \c T does not equal the actual
@@ -81,7 +208,7 @@ public:
   /// data shall be saved.
   fits(const std::string& filename)
   : _filename(filename) {}
-  
+
   /// Saves data to the file specified in the constructor.
   /// \param data The data that shall be saved.
   /// \throws std::runtime_error if the data could not be saved
@@ -91,7 +218,7 @@ public:
     int status = 0;
 
     std::vector<long> naxes;
-    
+
     for(std::size_t dim = 0; dim < data.get_dimension(); ++dim)
       naxes.push_back(data.get_extent_of_dimension(dim));
 
@@ -102,23 +229,23 @@ public:
     if (!fits_create_file(&file, fitsio_filename.c_str(), &status))
     {
       std::vector<long> fpixel(data.get_dimension(), 1);
-      
-      if (!fits_create_img(file, fits_datatype<T>::image_type(), 
+
+      if (!fits_create_img(file, fits_datatype<T>::image_type(),
                            naxes.size(), naxes.data(), &status))
       {
-        fits_write_pix(file, fits_datatype<T>::datatype(), fpixel.data(), 
+        fits_write_pix(file, fits_datatype<T>::datatype(), fpixel.data(),
                        data.get_num_elements(), const_cast<T*>(data.data()), &status);
-        
+
         fits_close_file(file, &status);
       }
       else
         throw std::runtime_error(std::string("Could not create fits image: ") + _filename);
-      
+
     }
     else
       throw std::runtime_error(std::string("Could not create fits file: ") + _filename);
   }
-  
+
   /// Loads data from a fits file
   /// \param out An array that will be used to store the loaded data. It will be
   /// automatically resized to the correct size and dimensions.
@@ -128,7 +255,7 @@ public:
     fitsfile* file;
     int status = 0;
     int bitpix, naxis_flag;
-    
+
     if(!fits_open_file(&file, _filename.c_str(), READONLY, &status))
     {
       int dimension = 0;
@@ -145,30 +272,30 @@ public:
         array_sizes.reserve(dimension);
         for(std::size_t i = 0; i < naxes.size(); ++i)
           array_sizes.push_back(static_cast<std::size_t>(naxes[i]));
-        
+
         out = util::multi_array<T>(array_sizes);
-        
+
         long fpixel [dimension];
         for(std::size_t i = 0; i < static_cast<std::size_t>(dimension); ++i)
           fpixel[i] = 1;
-   
+
         fits_read_pix(file,
-                        fits_datatype<T>::datatype(), 
-                        fpixel, 
-                        out.size(), 
-                        NULL, 
-                        out.data(), 
-                        NULL, 
+                        fits_datatype<T>::datatype(),
+                        fpixel,
+                        out.size(),
+                        NULL,
+                        out.data(),
+                        NULL,
                         &status);
-        
+
       }
-      
+
       fits_close_file(file, &status);
     }
     else
       throw std::runtime_error(std::string("Could not load fits file: ") + _filename);
   }
-  
+
 private:
   std::string _filename;
 };
@@ -298,6 +425,7 @@ private:
 
 } // util
 } // illcrawl
+
 
 
 #endif // FITS_WITHOUT_MPI

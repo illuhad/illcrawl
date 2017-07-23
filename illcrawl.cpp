@@ -75,7 +75,8 @@ struct command_line_options
 };
 
 template<class Partitioner>
-void save_distributed_fits(const Partitioner& partitioning,
+void
+save_distributed_fits(const Partitioner& partitioning,
                            const std::string& filename,
                            const render_result& data)
 {
@@ -121,10 +122,15 @@ void run(const illcrawl::illcrawl_app& app,
          const command_line_options& options,
          const Tolerance_type& tol,
          Volumetric_reconstructor& reconstructor,
-         const std::unique_ptr<illcrawl::reconstruction_quantity::quantity>& quantity)
+         const illcrawl::quantity_command_line_parser& quantity_parser)
 {
   render_result result;
+
+  std::unique_ptr<illcrawl::reconstruction_quantity::quantity> quantity =
+      quantity_parser.create_quantity(app);
+
   illcrawl::camera cam = app.create_distribution_centered_camera(options.resolution_x, options.resolution_y);
+  std::string camera_name = "camera";
 
   if(options.render_target == "image")
   {
@@ -145,6 +151,7 @@ void run(const illcrawl::illcrawl_app& app,
   }
   else if(options.render_target == "xray_spectrum")
   {
+    camera_name = "camera_frame0";
     app.output_stream() << "Starting calculation of xray spectrum "
                                 "(possibly specified quantity will be ignored)"
                              << std::endl;
@@ -165,6 +172,7 @@ void run(const illcrawl::illcrawl_app& app,
   }
   else if(options.render_target == "chandra_spectrum")
   {
+    camera_name = "camera_frame0";
     app.output_stream() << "Starting calculation of chandra spectrum "
                                 "(possibly specified quantity will be ignored)"
                              << std::endl;
@@ -183,6 +191,7 @@ void run(const illcrawl::illcrawl_app& app,
   }
   else if(options.render_target == "animation")
   {
+    camera_name = "camera_frame0";
     app.output_stream() << "Starting animation..." << std::endl;
 
     if(options.animation_phi_speed <= 0)
@@ -225,6 +234,8 @@ void run(const illcrawl::illcrawl_app& app,
   }
   else if(options.render_target == "tomography")
   {
+    camera_name = "camera_slice0";
+
     app.output_stream() << "Starting tomography..." << std::endl;
 
     illcrawl::distributed_volumetric_tomography
@@ -246,6 +257,25 @@ void run(const illcrawl::illcrawl_app& app,
   }
   else
     throw std::runtime_error("Invalid render target: "+options.render_target);
+
+  // Finally, save configuration to FITS header
+  illcrawl::util::fits_header header{options.output_file};
+  app.save_settings_to_fits(&header);
+  app.save_camera_settings_to_fits_header(&header, camera_name, cam);
+  quantity_parser.save_configuration_to_fits_header(&header);
+  header.set_entry("integration.abs_tol",
+                   options.absolute_tolerance,
+                   "Absolute integration tolerance");
+  header.set_entry("integration.rel_tol",
+                   options.relative_tolerance,
+                   "Relative integration tolerance");
+  header.set_entry("original_filename",
+                   options.output_file,
+                   "Original output filename");
+  header.set_entry("type",
+                   options.render_target,
+                   "Type of this file");
+
 }
 
 int main(int argc, char** argv)
@@ -303,9 +333,6 @@ int main(int argc, char** argv)
   {
     app.parse_command_line();
 
-    std::unique_ptr<illcrawl::reconstruction_quantity::quantity> reconstruction_quantity =
-        quantity_parser.create_quantity(app);
-
     illcrawl::integration::absolute_tolerance<scalar> abs_tol{cmd_options.absolute_tolerance};
     illcrawl::integration::relative_tolerance<scalar> rel_tol{cmd_options.relative_tolerance};
 
@@ -325,9 +352,9 @@ int main(int argc, char** argv)
     };
 
     if(cmd_options.absolute_tolerance > 0.0)
-      run(app, cmd_options, abs_tol, reconstructor, reconstruction_quantity);
+      run(app, cmd_options, abs_tol, reconstructor, quantity_parser);
     else
-      run(app, cmd_options, rel_tol, reconstructor, reconstruction_quantity);
+      run(app, cmd_options, rel_tol, reconstructor, quantity_parser);
 
   }
   catch(boost::program_options::error& e)

@@ -62,6 +62,19 @@
 
 
 namespace qcl {
+namespace detail {
+/// Some functions of the OpenCL C++ Wrappers
+/// will include a trailing \0 in the strings,
+/// which can lead to problems. This function removes
+/// '\0' from the string
+static void remove_zeros(std::string& s)
+{
+  std::size_t pos = std::string::npos;
+  while((pos = s.find('\0')) != std::string::npos)
+    s.erase(pos, 1);
+}
+
+}
 
 /// Class representing OpenCL errors that are encountered by QCL.
 class qcl_error : public std::runtime_error
@@ -281,10 +294,42 @@ public:
     // Apparently, the OpenCL wrappers leave '\0' in the string (Bug?). This 
     // can lead to problems when concatenating the device_name with other strings
     // and using c_str()
-    std::size_t pos = dev_name.find('\0');
-    if(pos != std::string::npos)
-      dev_name.erase(pos, 1);
+    detail::remove_zeros(dev_name);
     return dev_name;
+  }
+
+  /// \return The device vendor
+  std::string get_device_vendor() const
+  {
+    std::string vendor;
+    check_cl_error(_device.getInfo(CL_DEVICE_VENDOR, &vendor),
+                   "Could not obtain device information!");
+
+    detail::remove_zeros(vendor);
+    return vendor;
+  }
+
+  /// \return The OpenCL version supported by the device
+  std::string get_device_cl_version() const
+  {
+    std::string cl_version;
+    check_cl_error(_device.getInfo(CL_DEVICE_VERSION, &cl_version),
+                   "Could not obtain device information!");
+
+    detail::remove_zeros(cl_version);
+    return cl_version;
+
+  }
+
+  /// \return The driver version
+  std::string get_driver_version() const
+  {
+    std::string driver_version;
+    check_cl_error(_device.getInfo(CL_DRIVER_VERSION, &driver_version),
+                   "Could not obtain device information!");
+
+    detail::remove_zeros(driver_version);
+    return driver_version;
   }
   
   /// \return The type of the device

@@ -32,6 +32,8 @@ namespace illcrawl {
 class camera
 {
 public:
+  camera() = default;
+
   /// Construct object
   /// \param position The position of the center of the pixel
   /// screen of the camera
