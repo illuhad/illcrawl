@@ -259,22 +259,25 @@ void run(const illcrawl::illcrawl_app& app,
     throw std::runtime_error("Invalid render target: "+options.render_target);
 
   // Finally, save configuration to FITS header
-  illcrawl::util::fits_header header{options.output_file};
-  app.save_settings_to_fits(&header);
-  app.save_camera_settings_to_fits_header(&header, camera_name, cam);
-  quantity_parser.save_configuration_to_fits_header(&header);
-  header.set_entry("integration.abs_tol",
-                   options.absolute_tolerance,
-                   "Absolute integration tolerance");
-  header.set_entry("integration.rel_tol",
-                   options.relative_tolerance,
-                   "Relative integration tolerance");
-  header.set_entry("original_filename",
-                   options.output_file,
-                   "Original output filename");
-  header.set_entry("type",
-                   options.render_target,
-                   "Type of this file");
+  if(app.get_environment().get_communicator().rank() == app.get_environment().get_master_rank())
+  {
+    illcrawl::util::fits_header header{options.output_file};
+    app.save_settings_to_fits(&header);
+    app.save_camera_settings_to_fits_header(&header, camera_name, cam);
+    quantity_parser.save_configuration_to_fits_header(&header);
+    header.add_entry("integration.abs_tol",
+                     options.absolute_tolerance,
+                     "Absolute integration tolerance");
+    header.add_entry("integration.rel_tol",
+                     options.relative_tolerance,
+                     "Relative integration tolerance");
+    header.add_entry("original_filename",
+                     options.output_file,
+                     "Original output filename");
+    header.add_entry("type",
+                     options.render_target,
+                     "Type of this file");
+  }
 
 }
 

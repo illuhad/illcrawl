@@ -157,22 +157,26 @@ public:
   }
 
   template<class T>
-  void set_entry(const std::string& name,
+  void add_entry(const std::string& name,
                  const T& value,
                  const std::string& comment = "")
   {
     assert(_file != nullptr);
 
     int status = 0;
-    if(fits_update_key(_file,
+
+
+    fits_write_comment(_file, const_cast<char*>(comment.c_str()), &status);
+
+    if(fits_write_key(_file,
                        fits_datatype<T>::datatype(),
                        name.c_str(),
                        const_cast<T*>(&value),
-                       comment.c_str(), &status))
+                       nullptr, &status))
       throw std::runtime_error("Error while updating fits key: "+fits_error(status));
   }
 
-  void set_entry(const std::string& name,
+  void add_entry(const std::string& name,
                  const std::string& value,
                  const std::string& comment = "")
   {
@@ -180,7 +184,9 @@ public:
 
     const char* val = value.c_str();
     int status = 0;
-    if(fits_update_key(_file,
+    fits_write_comment(_file, const_cast<char*>(comment.c_str()), &status);
+
+    if(fits_write_key(_file,
                        fits_datatype<char*>::datatype(),
                        name.c_str(),
                        const_cast<char*>(val),

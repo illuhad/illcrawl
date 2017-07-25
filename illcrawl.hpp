@@ -210,29 +210,29 @@ public:
   void save_settings_to_fits(util::fits_header* header) const
   {
 
-    header->set_entry("renderer","Illcrawl suite");
-    header->set_entry("renderer.default_volumetric_reconstructor","volumetric_nn8/grid");
-    header->set_entry("renderer.partitioner","uniform","The parallel work partitioning strategy");
-    header->set_entry("environment.num_mpi_processes",
+    header->add_entry("renderer","Illcrawl suite");
+    header->add_entry("renderer.default_volumetric_reconstructor","volumetric_nn8/grid");
+    header->add_entry("renderer.partitioner","uniform","The parallel work partitioning strategy");
+    header->add_entry("environment.num_mpi_processes",
                       _env.get_communicator().size(),
                       "Number of parallel MPI processes");
-    header->set_entry("environment.device_name",
+    header->add_entry("environment.device_name",
                       _env.get_compute_device()->get_device_name(),
                       "Name of Compute device of master process");
-    header->set_entry("environment.device_vendor",
+    header->add_entry("environment.device_vendor",
                       _env.get_compute_device()->get_device_vendor(),
                       "Name of compute device vendor on the master process");
-    header->set_entry("environment.device_opencl_version",
+    header->add_entry("environment.device_opencl_version",
                       _env.get_compute_device()->get_device_cl_version(),
                       "The OpenCL version supported by the compute device of the master process");
-    header->set_entry("environment.device_driver_version",
+    header->add_entry("environment.device_driver_version",
                       _env.get_compute_device()->get_driver_version(),
                       "Version of the driver of the compute device of the master process");
-    header->set_entry("data_source",_hdf5_filename);
-    header->set_entry("a", this->_a, "Scale factor");
-    header->set_entry("z", this->_z, "Redshift");
-    header->set_entry("h", this->_h, "Hubble constant [100 km/s/Mpc]");
-    header->set_entry("dL", this->_luminosity_distance, "Luminosity distance [kpc]");
+    header->add_entry("data_source",_hdf5_filename);
+    header->add_entry("a", this->_a, "Scale factor");
+    header->add_entry("z", this->_z, "Redshift");
+    header->add_entry("h", this->_h, "Hubble constant [100 km/s/Mpc]");
+    header->add_entry("dL", this->_luminosity_distance, "Luminosity distance [kpc]");
 
     save_length_scalar_to_fits_header(header,
                                       "particle_distribution",
@@ -299,8 +299,8 @@ private:
     std::string comoving_full_key = parent_key + "." + key;
     std::string proper_full_key = parent_key + ".proper_" + key;
 
-    header->set_entry(comoving_full_key, value, comment + " (Comoving length [ckpc/h])");
-    header->set_entry(proper_full_key,
+    header->add_entry(comoving_full_key, value, comment + " (Comoving length [ckpc/h])");
+    header->add_entry(proper_full_key,
                       _units->length_conversion_factor() * value,
                       comment + " (Proper length [kpc])");
   }
@@ -314,7 +314,7 @@ private:
 
     for(std::size_t i = 0; i < 3; ++i)
     {
-      header->set_entry(key+"."+axes[i], v[i],
+      header->add_entry(key+"."+axes[i], v[i],
                         comment);
     }
   }
@@ -571,46 +571,46 @@ public:
 
   void save_configuration_to_fits_header(util::fits_header* header) const
   {
-    header->set_entry("quantity", _quantity_selection, "The rendered quantity");
+    header->add_entry("quantity", _quantity_selection, "The rendered quantity");
 
-    header->set_entry("quantity.xray_flux.min_energy",
+    header->add_entry("quantity.xray_flux.min_energy",
                       _xray_flux_min_energy,
                       "xray_flux quantity: Minimum energy for the energy integration [keV]");
-    header->set_entry("quantity.xray_flux.max_energy",
+    header->add_entry("quantity.xray_flux.max_energy",
                       _xray_flux_max_energy,
                       "xray_flux quantity: Maximum energy for the energy integration [keV]");
-    header->set_entry("quantity.xray_flux.num_samples",
+    header->add_entry("quantity.xray_flux.num_samples",
                       _xray_flux_num_samples,
                       "xray_flux quantity: Number of samples for the energy integration");
 
-    header->set_entry("quantity.xray_photon_flux.min_energy",
+    header->add_entry("quantity.xray_photon_flux.min_energy",
                       _xray_photon_flux_min_energy,
                       "xray_photon_flux quantity: Minimum energy for the energy integration [keV]");
-    header->set_entry("quantity.xray_photon_flux.max_energy",
+    header->add_entry("quantity.xray_photon_flux.max_energy",
                       _xray_photon_flux_max_energy,
                       "xray_photon_flux quantity: Maximum energy for the energy integration [keV]");
-    header->set_entry("quantity.xray_photon_flux.num_samples",
+    header->add_entry("quantity.xray_photon_flux.num_samples",
                       _xray_photon_flux_num_samples,
                       "xray_photon_flux quantity: Number of samples for the energy integration");
 
-    header->set_entry("quantity.xray_spectral_flux.energy",
+    header->add_entry("quantity.xray_spectral_flux.energy",
                       _xray_spectral_flux_energy,
                       "xray_spectral_flux quantity: Central energy of the evaluated energy channel [keV]");
-    header->set_entry("quantity.xray_spectral_flux.energy_bin_width",
+    header->add_entry("quantity.xray_spectral_flux.energy_bin_width",
                       _xray_spectral_flux_energy_bin_width,
                       "xray_spectral_flux quantity: Width of the evaluated energy channel [keV]");
 
-    header->set_entry("quantity.chandra_spectral_count_rate.energy",
+    header->add_entry("quantity.chandra_spectral_count_rate.energy",
                       _chandra_spectral_count_rate_energy,
                       "chandra_spectral_count_rate quantity: Central energy of the evaluated energy channel [keV]");
-    header->set_entry("quantity.chandra_spectral_count_rate.energy_bin_width",
+    header->add_entry("quantity.chandra_spectral_count_rate.energy_bin_width",
                       _chandra_spectral_count_rate_energy,
                       "chandra_spectral_count_rate quantity: Width of the evaluated energy channel [keV]");
 
-    header->set_entry("quantity.luminosity_weighted_temp.min_energy",
+    header->add_entry("quantity.luminosity_weighted_temp.min_energy",
                       _luminosity_weighted_temp_min_energy,
                       "luminosity_weighted_temperature quantity: Minimum energy for the energy integration [keV]");
-    header->set_entry("quantity.luminosity_weighted_temp.max_energy",
+    header->add_entry("quantity.luminosity_weighted_temp.max_energy",
                       _luminosity_weighted_temp_max_energy,
                       "luminosity_weighted_temperature quantity: Maximum energy for the energy integration [keV]");
   }
