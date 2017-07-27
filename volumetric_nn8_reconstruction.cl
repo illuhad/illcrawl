@@ -24,169 +24,62 @@
 
 #include "interpolation.cl"
 #include "volumetric_nn8_tile_iteration_order.cl"
-
+#include "particle_grid.cl"
 
 
 typedef float8 nearest_neighbors_list;
 
-__constant uint16 insertion_shuffle_masks [] =
-{
-  (uint16)(8, 0, 1, 2, 3, 4, 5, 6, (uint8)(8)),
-  (uint16)(0, 8, 1, 2, 3, 4, 5, 6, (uint8)(8)),
-  (uint16)(0, 1, 8, 2, 3, 4, 5, 6, (uint8)(8)),
-  (uint16)(0, 1, 2, 8, 3, 4, 5, 6, (uint8)(8)),
-  (uint16)(0, 1, 2, 3, 8, 4, 5, 6, (uint8)(8)),
-  (uint16)(0, 1, 2, 3, 4, 8, 5, 6, (uint8)(8)),
-  (uint16)(0, 1, 2, 3, 4, 5, 8, 6, (uint8)(8)),
-  (uint16)(0, 1, 2, 3, 4, 5, 6, 8, (uint8)(8)),
-  (uint16)(0, 1, 2, 3, 4, 5, 6, 7, (uint8)(8))
-};
-
-
-
-int3 get_tile_around_pos3(vector3 coordinate,
-                      vector3 tiles_min_corner,
-                      vector3 tile_size)
-{
-  vector3 float_result = (coordinate - tiles_min_corner) / tile_size;
-
-  return (int3)((int)float_result.x, (int)float_result.y, (int)float_result.z);
-}
-
-void neighbor_list_insert(nearest_neighbors_list* list,
-                   scalar value,
-                   int insertion_pos)
-{
-  nearest_neighbors_list insertion_vector = (nearest_neighbors_list)value;
-  *list = shuffle2(*list, insertion_vector, insertion_shuffle_masks[insertion_pos]).lo;
-}
-
 inline
-void sorted_neighbors_insert(nearest_neighbors_list* distances,
-                             nearest_neighbors_list* values,
-                             scalar new_distance,
-                             scalar new_value)
+scalar get_weight3d(scalar distance)
 {
-  // Find position to insert before
-  int insertion_pos = 0;
-
-  if(distances->s1 >= new_distance && new_distance > distances->s0)
-    insertion_pos = 1;
-  if(distances->s2 >= new_distance && new_distance > distances->s1)
-    insertion_pos = 2;
-  if(distances->s3 >= new_distance && new_distance > distances->s2)
-    insertion_pos = 3;
-  if(distances->s4 >= new_distance && new_distance > distances->s3)
-    insertion_pos = 4;
-  if(distances->s5 >= new_distance && new_distance > distances->s4)
-    insertion_pos = 5;
-  if(distances->s6 >= new_distance && new_distance > distances->s5)
-    insertion_pos = 6;
-  if(distances->s7 >= new_distance && new_distance > distances->s6)
-    insertion_pos = 7;
-  if(new_distance > distances->s7)
-    insertion_pos = 8;
-
-  neighbor_list_insert(distances, new_distance, insertion_pos);
-  neighbor_list_insert(values, new_value, insertion_pos);
-}
-
-inline
-scalar nearest_neighbor_list_max(nearest_neighbors_list x)
-{
-  return x.s7;
-}
-
-inline
-scalar nearest_neighbor_list_min(nearest_neighbors_list x)
-{
-  return x.s0;
-}
-
-inline
-scalar get_weight3d(scalar distance2)
-{
-  scalar dist2_inv = 1.f / distance2;
+  scalar dist2_inv = 1.f / (distance*distance);
   scalar dist4_inv = dist2_inv * dist2_inv;
   return dist4_inv * dist4_inv * dist2_inv;
 }
 
-inline
-int is_tile_id_component_valid(int id, int num_tiles)
-{
-  return id >= 0 && id < num_tiles;
-}
 
-inline
-int tile_exists(int3 tile_id, int3 num_tiles)
-{
-  if(!is_tile_id_component_valid(tile_id.x, num_tiles.x))
-    return false;
-  if(!is_tile_id_component_valid(tile_id.y, num_tiles.y))
-    return false;
-  if(!is_tile_id_component_valid(tile_id.z, num_tiles.z))
-    return false;
-  return true;
-}
 
 #define MAX_CONTRIBUTION_DISTANCE MAXFLOAT
 
-inline
-void evaluate_tile(int3 current_tile,
-                   __global vector4* tiles,
-                   int3 num_tiles,
-                   __global vector4* particles,
-                   vector3 evaluation_point_coord,
-                   nearest_neighbors_list* distances,
-                   nearest_neighbors_list* values,
-                   scalar* search_radius)
+
+void nn_list_to_array8(nearest_neighbors_list nn_list,
+                       float* out)
 {
-  vector4 tile_header =
-      tiles[current_tile.z * num_tiles.x * num_tiles.y +
-            current_tile.y * num_tiles.x +
-            current_tile.x];
-
-  int num_particles_in_tile = (int)tile_header.x;
-
-  // scalar maximum_smoothing_distance_of_tile = tile_header.y;
-  int particle_data_offset = (int)tile_header.z;
-
-  //if(get_global_id(0)==512)
-  //  printf("n_particles = %d\n", num_particles_in_tile);
-
-  for (int i = 0; i < num_particles_in_tile; ++i)
-  {
-    vector4 current_particle = particles[particle_data_offset + i];
-
-    scalar particle_distance2 =
-        distance23d(current_particle.xyz, evaluation_point_coord);
-
-    if (particle_distance2 < nearest_neighbor_list_max(*distances))
-    {
-
-      scalar new_value = current_particle.w;
-
-      sorted_neighbors_insert(distances, values, particle_distance2,
-                                new_value);
-
-      // If we already have all slots for weights taken, we can
-      // assume as search radius the distance to the particle with
-      // the lowest contribution (i.e. the farthest particle)
-      *search_radius = fmin(*search_radius, sqrt(nearest_neighbor_list_max(*distances)));
-
-    }
-  }
+  out[0] = nn_list.s0;
+  out[1] = nn_list.s1;
+  out[2] = nn_list.s2;
+  out[3] = nn_list.s3;
+  out[4] = nn_list.s4;
+  out[5] = nn_list.s5;
+  out[6] = nn_list.s6;
+  out[7] = nn_list.s7;
 }
+
+nearest_neighbors_list array8_to_nn_list(float* array)
+{
+  nearest_neighbors_list out;
+  out.s0 = array[0];
+  out.s1 = array[1];
+  out.s2 = array[2];
+  out.s3 = array[3];
+
+  out.s4 = array[4];
+  out.s5 = array[5];
+  out.s6 = array[6];
+  out.s7 = array[7];
+  return out;
+}
+
+#define NUM_NEIGHBORS 8
 
 __kernel void volumetric_nn8_reconstruction(
     int is_first_run,
-    __global vector4* tiles,
-    int3 num_tiles,
-    vector3 tiles_min_corner,
-    vector3 tile_sizes,
+    __global int2* grid_cells,
+    int3 num_grid_cells,
+    vector3 grid_min_corner,
+    vector3 grid_cell_sizes,
 
     __global vector4* particles,
-    scalar maximum_smoothing_length,
 
     int num_evaluation_points,
     __global vector4* evaluation_points_coordinates,
@@ -197,96 +90,109 @@ __kernel void volumetric_nn8_reconstruction(
 
   if (gid < num_evaluation_points)
   {
+    grid3d_ctx grid;
+    grid3d_init(&grid, grid_min_corner, grid_cell_sizes, num_grid_cells);
+
     vector3 evaluation_point_coord = evaluation_points_coordinates[gid].xyz;
-    nearest_neighbors_list distances;
-    nearest_neighbors_list values;
+    scalar distances [NUM_NEIGHBORS];
+    scalar values    [NUM_NEIGHBORS];
+
     if (is_first_run)
     {
-      distances = (nearest_neighbors_list)(MAX_CONTRIBUTION_DISTANCE,
-                                           MAX_CONTRIBUTION_DISTANCE,
-                                           MAX_CONTRIBUTION_DISTANCE,
-                                           MAX_CONTRIBUTION_DISTANCE,
-                                           MAX_CONTRIBUTION_DISTANCE,
-                                           MAX_CONTRIBUTION_DISTANCE,
-                                           MAX_CONTRIBUTION_DISTANCE,
-                                           MAX_CONTRIBUTION_DISTANCE);
-      values  = (nearest_neighbors_list)(0, 0, 0, 0, 0, 0, 0, 0);
+      for(int i = 0; i < NUM_NEIGHBORS; ++i)
+      {
+        distances[i] = MAX_CONTRIBUTION_DISTANCE;
+        values[i]  = 0.0f;
+      }
     }
     else
     {
-      distances = evaluation_points_weights[gid];
-      values =  evaluation_points_values[gid];
+      nearest_neighbors_list previous_weights = evaluation_points_weights[gid];
+      nearest_neighbors_list previous_values = evaluation_points_values[gid];
+
+      nn_list_to_array8(previous_weights, distances);
+      nn_list_to_array8(previous_values, values);
     }
 
+    int3 evaluation_point_cell = grid3d_get_cell_indices(&grid, evaluation_point_coord);
+    vector3 evaluation_point_cell_min_corner = grid3d_get_cell_min_corner(&grid,
+                                                                          evaluation_point_cell);
 
-    int3 evaluation_tile = get_tile_around_pos3(evaluation_point_coord,
-                                                tiles_min_corner, tile_sizes);
+    scalar cell_radius = 0.5f * sqrt(dot(grid.cell_sizes, grid.cell_sizes));
 
-    vector3 tile_min_corner =
-        tiles_min_corner + (vector3)((float)evaluation_tile.x,
-                                     (float)evaluation_tile.y,
-                                     (float)evaluation_tile.z) * tile_sizes;
-    vector3 tile_center =
-        tile_min_corner + 0.5f * tile_sizes;
+    scalar search_radius = 0.0f;
+    int max_distance_neighbor = 0;
 
-    scalar tile_radius = 0.5f * sqrt(dot(tile_sizes, tile_sizes));
-
-
-    scalar search_radius = maximum_smoothing_length;
-    if(tile_exists(evaluation_tile, num_tiles))
+    for(int i = 0; i < NUM_NEIGHBORS; ++i)
     {
-      vector4 evaluation_tile_header =
-        tiles[evaluation_tile.z * num_tiles.x * num_tiles.y +
-              evaluation_tile.y * num_tiles.x +
-              evaluation_tile.x];
-
-      search_radius = evaluation_tile_header.w;
+      if(distances[i] > search_radius)
+        max_distance_neighbor = i;
+      search_radius = fmax(search_radius, distances[i]);
     }
 
-    if(search_radius == 0.0f)
-      search_radius = maximum_smoothing_length;
 
-    search_radius = fmin(search_radius, nearest_neighbor_list_max(distances));
+    int subcell_id = 0;
+    {
+      grid3d_ctx subgrid;
+      grid3d_init(&subgrid,
+                  evaluation_point_cell_min_corner,
+                  1.f/(float)NUM_SUBCELLS * grid_cell_sizes,
+                  (int3)(NUM_SUBCELLS, NUM_SUBCELLS, NUM_SUBCELLS));
 
-
-    int3 subtile = get_tile_around_pos3(evaluation_point_coord,
-                                        tile_min_corner, 1.f/(float)NUM_SUBTILES * tile_sizes);
-    int subtile_id = subtile.x
-                   + subtile.y * NUM_SUBTILES
-                   + subtile.z * NUM_SUBTILES * NUM_SUBTILES;
+      subcell_id = grid3d_get_cell_key(&subgrid, evaluation_point_coord);
+    }
 
     for(int i = 0; i < MAX_NUMBER_ITERATED_TILES; ++i)
     {
-      char4 tile_delta =
-        spiral3d_grid_iteration_order[subtile_id * MAX_NUMBER_ITERATED_TILES + i];
+      char4 cell_delta =
+        spiral3d_grid_iteration_order[subcell_id * MAX_NUMBER_ITERATED_TILES + i];
 
-      int3 current_tile = evaluation_tile;
-      current_tile.x += tile_delta.x;
-      current_tile.y += tile_delta.y;
-      current_tile.z += tile_delta.z;
+      int3 current_cell = evaluation_point_cell;
+      current_cell += (int3)((int)cell_delta.x,
+                             (int)cell_delta.y,
+                             (int)cell_delta.z);
 
-      vector3 current_tile_center = tiles_min_corner;
-      current_tile_center.x += ((float)current_tile.x + 0.5f) * tile_sizes.x;
-      current_tile_center.y += ((float)current_tile.y + 0.5f) * tile_sizes.y;
-      current_tile_center.z += ((float)current_tile.z + 0.5f) * tile_sizes.z;
+      vector3 current_cell_center = grid3d_get_cell_center(&grid, current_cell);
 
-      scalar r = search_radius+tile_radius;
-      if(distance23d(current_tile_center, evaluation_point_coord) > r*r)
+      scalar r = search_radius + cell_radius;
+      if(distance23d(current_cell_center, evaluation_point_coord) > r*r)
         break;
 
-      if(tile_exists(current_tile, num_tiles))
+      if(grid3d_is_cell_in_grid(&grid, current_cell))
       {
-        evaluate_tile(current_tile,
-                      tiles, num_tiles, particles,
-                      evaluation_point_coord,
-                      &distances, &values,
-                      &search_radius);
+        ulong current_cell_key = grid3d_get_cell_key_from_indices(&grid, current_cell);
+        int2 cell_data = grid_cells[current_cell_key];
+
+        for(int current_particle_id = cell_data.x;
+            current_particle_id < cell_data.y;
+            ++current_particle_id)
+        {
+          vector4 current_particle = particles[current_particle_id];
+          scalar current_distance = distance(current_particle.xyz, evaluation_point_coord);
+
+          if(current_distance < search_radius)
+          {
+            // Overwrite the neighbor with the largest distance
+            // with our newly found neighbor
+            distances[max_distance_neighbor] = current_distance;
+            values[max_distance_neighbor] = current_particle.w;
+
+            // Update search radius
+            search_radius = 0.0f;
+            for(int j = 0; j < NUM_NEIGHBORS; ++j)
+            {
+              if(distances[j] > search_radius)
+                max_distance_neighbor = j;
+              search_radius = fmax(search_radius, distances[j]);
+            }
+          }
+        }
       }
     }
 
 
-    evaluation_points_weights[gid] = distances;
-    evaluation_points_values[gid] = values;
+    evaluation_points_weights[gid] = array8_to_nn_list(distances);
+    evaluation_points_values [gid] = array8_to_nn_list(values);
   }
 
 }

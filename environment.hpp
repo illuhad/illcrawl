@@ -86,6 +86,12 @@ public:
                                                "construct_evaluation_points_over_camera_plane",
                                                "gather_integrand_evaluations"
                                             });
+    _global_ctx->global_register_source_file("particle_grid.cl",
+                                            {
+                                              "grid3d_generate_sort_keys",
+                                              "grid3d_determine_cells_begin",
+                                              "grid3d_determine_cells_end"
+                                            });
 
     determine_num_local_processes();
 

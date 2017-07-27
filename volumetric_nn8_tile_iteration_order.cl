@@ -23,7 +23,7 @@
 #define ITERATION_ORDER
 
 #define MAX_NUMBER_ITERATED_TILES 125
-#define NUM_SUBTILES 2
+#define NUM_SUBCELLS 2
 
 __constant char4 spiral3d_grid_iteration_order [] =
 {

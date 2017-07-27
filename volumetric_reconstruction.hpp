@@ -38,7 +38,7 @@
 #include "multi_array.hpp"
 #include "coordinate_system.hpp"
 #include "interpolation_tree.hpp"
-#include "particle_tiles.hpp"
+#include "particle_grid.hpp"
 #include "camera.hpp"
 #include "partitioner.hpp"
 
@@ -139,7 +139,7 @@ public:
   /// any data from previous reconstructions.
   void purge_state()
   {
-    this->_tiles = nullptr;
+    this->_grid = nullptr;
   }
 
   /// Execute the reconstruction
@@ -182,7 +182,7 @@ public:
 
     cl::Event kernel_finished;
     cl_int err;
-    if((_tiles != nullptr) &&
+    if((_grid != nullptr) &&
        (streamer.get_num_rows() <= _blocksize))
     {
       // Reuse existing particles and tiles
@@ -291,11 +291,10 @@ public:
           for(std::size_t i = 0; i < _filtered_particles.size(); ++i)
             _filtered_particles[i].s[3] = _transformed_quantity[i];
 
-          // Release old memory first by setting _tiles to null
-          _tiles = nullptr;
-          this->_tiles = std::make_shared<particle_tile_grid>(_ctx,
-                                                          _filtered_particles,
-                                                          _filtered_smoothing_lengths);
+          // Release old memory first by setting _grid to null
+          _grid = nullptr;
+          this->_grid = std::make_shared<particle_grid>(_ctx,
+                                                        _filtered_particles);
 
           // Wait for the previous kernel to finish, if we are not
           // in the first run
@@ -396,37 +395,32 @@ private:
                              const cl::Buffer& evaluation_points_weights,
                              cl::Event* kernel_finished_event)
   {
-    assert(_tiles != nullptr);
+    assert(_grid != nullptr);
 
-    auto num_tiles = _tiles->get_num_tiles();
-    auto tiles_min_corner = _tiles->get_tiles_min_corner();
-    auto tile_sizes = _tiles->get_tile_sizes();
+    auto num_cells = _grid->get_num_grid_cells();
+    auto grid_min_corner = _grid->get_grid_min_corner();
+    auto cell_sizes = _grid->get_grid_cell_sizes();
 
     qcl::kernel_argument_list args{_kernel};
     args.push(static_cast<cl_int>(is_first_run));
-    args.push(_tiles->get_tiles_buffer());
-    args.push(cl_int3{{static_cast<cl_int>(num_tiles[0]),
-                       static_cast<cl_int>(num_tiles[1]),
-                       static_cast<cl_int>(num_tiles[2])}});
-    args.push(device_vector3{{static_cast<device_scalar>(tiles_min_corner[0]),
-                              static_cast<device_scalar>(tiles_min_corner[1]),
-                              static_cast<device_scalar>(tiles_min_corner[2])}});
-    args.push(device_vector3{{static_cast<device_scalar>(tile_sizes[0]),
-                              static_cast<device_scalar>(tile_sizes[1]),
-                              static_cast<device_scalar>(tile_sizes[2])}});
-    args.push(_tiles->get_sorted_particles_buffer());
-    args.push(static_cast<device_scalar>(_tiles->get_maximum_smoothing_length()));
+    args.push(_grid->get_grid_cells_buffer());
+    args.push(num_cells);
+    args.push(grid_min_corner);
+    args.push(cell_sizes);
+
+    args.push(_grid->get_particle_buffer());
+
     args.push(static_cast<cl_int>(num_evaluation_points));
     args.push(evaluation_points);
     args.push(evaluation_points_weights);
     args.push(evaluation_points_values);
 
-
+    std::vector<cl::Event> grid_ready = {{_grid->get_grid_ready_event()}};
     cl_int err = _ctx->get_command_queue().enqueueNDRangeKernel(*_kernel,
                                                    cl::NullRange,
                                                    cl::NDRange{math::make_multiple_of(local_size1D, num_evaluation_points)},
                                                    cl::NDRange{local_size1D},
-                                                   _tiles->get_data_transferred_events(),
+                                                   &grid_ready,
                                                    kernel_finished_event);
 
     qcl::check_cl_error(err, "Could not enqueue volumetric_nn8_reconstruction kernel");
@@ -447,7 +441,7 @@ private:
   std::size_t _num_reconstructed_points;
   cl::Buffer  _reconstruction_result;
 
-  std::shared_ptr<particle_tile_grid> _tiles;
+  std::shared_ptr<particle_grid> _grid;
   std::size_t _blocksize;
 
   std::vector<particle> _filtered_particles;

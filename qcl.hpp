@@ -127,10 +127,8 @@ template<class T>
 boost::compute::buffer_iterator<T> create_buffer_iterator(const cl::Buffer& buffer,
                                                           std::size_t position)
 {
-  return boost::compute::buffer_iterator<T>{
-    boost::compute::buffer{buffer.get()},
-    position
-  };
+  return boost::compute::make_buffer_iterator<T>(boost::compute::buffer{buffer.get()},
+                                                 position);
 }
 
 #endif
