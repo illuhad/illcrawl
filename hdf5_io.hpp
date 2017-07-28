@@ -69,15 +69,21 @@ public:
   static std::string get_masses_identifier() {return "Masses";}
   static std::string get_electron_abundance_identifier() {return "ElectronAbundance";}
 
-private:
   void select_group(unsigned particle_type_id)
+  {
+    select_group(_particle_type + std::to_string(particle_type_id));
+  }
+
+  void select_group(const std::string& group_name)
   {
     try {
       _group.close();
     } catch (...) {}
 
-    _group = _file.openGroup(_particle_type + std::to_string(particle_type_id));
+    _group = _file.openGroup(group_name);
   }
+
+private:
 
   const std::string _particle_type = "PartType";
 

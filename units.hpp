@@ -78,6 +78,13 @@ public:
          * length_conversion_factor();
   }
 
+  /// \return factor to convert potentials in
+  /// km^2/s^2/a to (km/s)^2
+  math::scalar potential_conversion_factor() const
+  {
+    return 1. / _a;
+  }
+
 private:
   math::scalar _a;
   math::scalar _h;

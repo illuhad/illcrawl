@@ -385,7 +385,8 @@ public:
          "mean_temperature: The mean temperature along the line of sight [K]\n"
          "luminosity_weighted_temperature: Calculates xray_flux*temperature along the line of sight. [keV/s/m^2*K]\n"
          "mean_density: The mean density along the line of sight [M_sun/kpc^3]\n"
-         "mass: The total mass along the line of sight [M_sun]")
+         "mass: The total mass along the line of sight [M_sun]\n"
+         "potential: The gravitational potential [(km/s)^2]")
         ("quantity.xray_spectral_flux.energy",
          boost::program_options::value<math::scalar>(&_xray_spectral_flux_energy)->default_value(
            _xray_spectral_flux_energy),
@@ -543,6 +544,15 @@ public:
     {
       return std::unique_ptr<reconstruction_quantity::mass>{
         new reconstruction_quantity::mass{
+          &(app.get_data_loader()),
+          app.get_unit_converter()
+        }
+      };
+    }
+    else if(_quantity_selection == "potential")
+    {
+      return std::unique_ptr<reconstruction_quantity::potential>{
+        new reconstruction_quantity::potential{
           &(app.get_data_loader()),
           app.get_unit_converter()
         }

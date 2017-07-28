@@ -768,12 +768,13 @@ public:
       result_buffer[i] = values / weights;
     }
 #endif
-    math::scalar dV = 1.0;
-    if(reconstructed_quantity.is_integrated_quantity())
-      dV = _cam.get_pixel_size()
-         * _cam.get_pixel_size()
-         * _cam.get_pixel_size()
-         * reconstructed_quantity.get_unit_converter().volume_conversion_factor();
+
+    math::scalar pixel_volume = _cam.get_pixel_size()
+                              * _cam.get_pixel_size()
+                              * _cam.get_pixel_size();
+    math::scalar dV = reconstructed_quantity.effective_volume_integration_dV(
+          pixel_volume * reconstructed_quantity.get_unit_converter().volume_conversion_factor(),
+          pixel_volume * reconstructed_quantity.get_unit_converter().volume_conversion_factor());
 
     for(std::size_t i = 0; i < samples_per_pixel; ++i)
     {
@@ -983,28 +984,20 @@ public:
 
     // Finalize results
 
-    device_scalar dV = 1.0f;
+    device_scalar pixel_area =
+        static_cast<device_scalar>(_cam.get_pixel_size() * _cam.get_pixel_size());
 
-    if(reconstructed_quantity.is_integrated_quantity())
-    {
-      // The multiplication with length_conversion_factor() is important to turn
-      // the integration along the line of sight from working in units of ckpc/h to
-      // kpc, which is what the implementation of the physical quantities use
-      // internally. This happens analogously with the area
-      // perpendicular to the line of sight dA.
-      dV = static_cast<device_scalar>(_cam.get_pixel_size() * _cam.get_pixel_size());
-      dV *= reconstructed_quantity.get_unit_converter().length_conversion_factor();
-      dV *= reconstructed_quantity.get_unit_converter().area_conversion_factor();
-    }
-    else
-    {
-      // Non-integrated quantities must be divided by the integration length,
-      // such that a mean is calculated
-      dV = 1.0 / static_cast<device_scalar>(z_range);
-    }
+    device_scalar length_conversion =
+        static_cast<device_scalar>(
+          reconstructed_quantity.get_unit_converter().length_conversion_factor());
+
+    device_scalar dA = static_cast<device_scalar>(
+          reconstructed_quantity.effective_line_of_sight_integration_dA(
+            pixel_area * reconstructed_quantity.get_unit_converter().area_conversion_factor(),
+            length_conversion * z_range));
 
     for(auto it = output.begin(); it != output.end(); ++it)
-      (*it) *= dV;
+      (*it) *= length_conversion * dA;
   }
 
 

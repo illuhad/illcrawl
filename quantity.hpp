@@ -51,10 +51,11 @@ public:
 
   virtual void push_additional_kernel_args(qcl::kernel_argument_list& args) const {}
 
-  virtual bool is_integrated_quantity() const
-  {
-    return false;
-  }
+  virtual math::scalar effective_volume_integration_dV(math::scalar dV,
+                                                       math::scalar integration_volume) const = 0;
+  virtual math::scalar effective_line_of_sight_integration_dA(math::scalar dA,
+                                                              math::scalar integration_range) const = 0;
+
 
   virtual ~quantity(){}
 
@@ -165,9 +166,15 @@ public:
 
   virtual ~xray_flux_based_quantity(){}
 
-  virtual bool is_integrated_quantity() const override
+  virtual math::scalar effective_volume_integration_dV(math::scalar dV,
+                                                       math::scalar integration_volume) const override
   {
-    return true;
+    return dV;
+  }
+  virtual math::scalar effective_line_of_sight_integration_dA(math::scalar dA,
+                                                              math::scalar integration_range) const override
+  {
+    return dA;
   }
 
   math::scalar get_redshift() const
@@ -441,6 +448,18 @@ public:
   }
 
   virtual ~mean_temperature(){}
+
+  virtual math::scalar effective_volume_integration_dV(math::scalar dV, math::scalar integration_volume) const override
+  {
+    return dV / integration_volume;
+  }
+
+  virtual math::scalar effective_line_of_sight_integration_dA(math::scalar dA, math::scalar integration_range) const override
+  {
+    // We want to obtain the mean temperature along the line of sight, therefore
+    // we need to calculate T = Integral dz*T(z) / (Integral dz) => dA_eff = 1/integration_range
+    return 1.0 / integration_range;
+  }
 };
 
 class interpolation_weight : public density_based_quantity
@@ -457,6 +476,18 @@ public:
   }
 
   virtual ~interpolation_weight(){}
+
+  virtual math::scalar effective_volume_integration_dV(math::scalar dV,
+                                                       math::scalar integration_volume) const override
+  {
+    return dV / integration_volume;
+  }
+
+  virtual math::scalar effective_line_of_sight_integration_dA(math::scalar dA,
+                                                              math::scalar integration_range) const override
+  {
+    return 1.0 / integration_range;
+  }
 };
 
 class mean_density : public density_based_quantity
@@ -470,6 +501,18 @@ public:
   virtual qcl::kernel_ptr get_kernel(const qcl::device_context_ptr &ctx) const override
   {
     return ctx->get_kernel("unprocessed_quantity");
+  }
+
+  virtual math::scalar effective_volume_integration_dV(math::scalar dV,
+                                                       math::scalar integration_volume) const override
+  {
+    return dV / integration_volume;
+  }
+
+  virtual math::scalar effective_line_of_sight_integration_dA(math::scalar dA,
+                                                              math::scalar integration_range) const override
+  {
+    return 1.0 / integration_range;
   }
 
   virtual ~mean_density(){}
@@ -488,14 +531,67 @@ public:
     return ctx->get_kernel("unprocessed_quantity");
   }
 
-  virtual bool is_integrated_quantity() const override
+  virtual math::scalar effective_volume_integration_dV(math::scalar dV,
+                                                       math::scalar integration_volume) const override
   {
-    return true;
+    return dV;
+  }
+
+  virtual math::scalar effective_line_of_sight_integration_dA(math::scalar dA,
+                                                              math::scalar integration_range) const override
+  {
+    return dA;
   }
 
   virtual ~mass(){}
 };
 
+
+class potential : public illustris_quantity
+{
+public:
+  potential(const io::illustris_data_loader* data,
+            const unit_converter& converter)
+      : illustris_quantity{
+          data,
+          std::vector<std::string>{
+            "Potential"
+          },
+          converter
+        }
+  {}
+
+  virtual qcl::kernel_ptr get_kernel(const qcl::device_context_ptr &ctx) const override
+  {
+    return ctx->get_kernel("unprocessed_quantity");
+  }
+
+  virtual std::vector<math::scalar> get_quantitiy_scaling_factors() const
+  {
+    return std::vector<math::scalar>{{
+        this->get_unit_converter().potential_conversion_factor()
+    }};
+  }
+
+  virtual math::scalar effective_volume_integration_dV(math::scalar dV,
+                                                       math::scalar integration_volume) const override
+  {
+    // mean potential
+    return dV / integration_volume;
+  }
+
+  virtual math::scalar effective_line_of_sight_integration_dA(math::scalar dA,
+                                                              math::scalar integration_range) const override
+  {
+    // integrated potential along line of sight. We do not need dA because we
+    // are not integrating over the area, and we do not need the integration_range
+    // because we are not calculating the mean, but the projected (integrated)
+    // potential.
+    return 1.0;
+  }
+
+  virtual ~potential(){}
+};
 
 
 

@@ -252,11 +252,8 @@ private:
           reconstructed_quantity.get_unit_converter().volume_conversion_factor();
 
 
-      out_profile[shell] *= dV * unit_system_conversion;
-      if(!reconstructed_quantity.is_integrated_quantity())
-      {
-        out_profile[shell] /= (shell_volume * unit_system_conversion);
-      }
+      out_profile[shell] *= reconstructed_quantity.effective_volume_integration_dV(
+            dV * unit_system_conversion, shell_volume * unit_system_conversion);
     }
 
   }
