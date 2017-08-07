@@ -411,7 +411,9 @@ public:
           std::cout << "  Processing particles "
                     << current_block.get_available_data_range_begin()
                     << " to "
-                    << current_block.get_available_data_range_end() << std::endl;
+                    << current_block.get_available_data_range_begin()
+                       + current_block.get_num_available_rows()
+                    << std::endl;
 
           for(std::size_t i = 0; i < current_block.get_num_available_rows(); ++i)
           {
