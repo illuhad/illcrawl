@@ -22,6 +22,8 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <map>
+#include <unordered_map>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string.hpp>
 
@@ -30,8 +32,91 @@
 #include "async_io.hpp"
 #include "coordinate_system.hpp"
 
-const std::size_t blocksize = 500000;
+const std::size_t blocksize = 10000000;
 const illcrawl::math::vector3 periodic_length = {{75000.,75000.,75000.}};
+
+class dataset_descriptor
+{
+public:
+  dataset_descriptor(const std::string& group_name,
+                     const std::string& dataset_name)
+    : _group_name{group_name},
+      _dataset_name{dataset_name}
+  {}
+
+  dataset_descriptor(const std::string& identifier)
+    : _separator{":"}
+  {
+    _group_name = "PartType0";
+    _dataset_name = identifier;
+
+    std::size_t separator_pos = identifier.find(_separator);
+    if(separator_pos != std::string::npos)
+    {
+      _group_name = identifier.substr(0, separator_pos);
+      _dataset_name = identifier.substr(separator_pos + 1);
+    }
+  }
+
+  std::string get_identifier() const
+  {
+    return get_group_name() + _separator + get_dataset_name();
+  }
+
+  const std::string& get_group_name() const
+  {
+    return _group_name;
+  }
+
+  const std::string& get_dataset_name() const
+  {
+    return _dataset_name;
+  }
+private:
+  const std::string _separator;
+
+  std::string _group_name;
+  std::string _dataset_name;
+};
+
+class dataset_collection
+{
+public:
+  dataset_collection(const std::vector<dataset_descriptor>& datasets)
+    : _descriptors(datasets)
+  {
+    for(const auto& descriptor : datasets)
+    {
+      _datasets[descriptor.get_group_name()].push_back(descriptor.get_dataset_name());
+    }
+    for(const auto& group_dataset_pair : _datasets)
+      _groups.push_back(group_dataset_pair.first);
+  }
+
+  const std::vector<std::string>& get_groups() const
+  {
+    return _groups;
+  }
+
+  const std::vector<dataset_descriptor>& get_dataset_descriptors() const
+  {
+    return _descriptors;
+  }
+
+  const std::vector<std::string>& get_datasets(const std::string& group) const
+  {
+    auto it = _datasets.find(group);
+
+    if(it == _datasets.end())
+      throw std::invalid_argument{"Queried group does not exist"};
+
+    return it->second;
+  }
+private:
+  std::vector<dataset_descriptor> _descriptors;
+  std::vector<std::string> _groups;
+  std::unordered_map<std::string, std::vector<std::string>> _datasets;
+};
 
 class selector
 {
@@ -145,88 +230,104 @@ private:
 class selected_particle_storage
 {
 public:
-  selected_particle_storage(const std::vector<std::string>& field_names)
-    : _field_names{field_names},
-      _stored_datasets(field_names.size() + 1),
-      _dataset_shapes(field_names.size() + 1)
-  {}
+  selected_particle_storage(const dataset_collection& field_names)
+    : _field_names(field_names)
+  {
+  }
+
+  using dataset_storage = std::vector<illcrawl::math::scalar>;
 
   ~selected_particle_storage(){}
 
-  void operator()(illcrawl::io::buffer_accessor<illcrawl::math::scalar>& access,
-                  const illcrawl::io::async_dataset_streamer<illcrawl::math::scalar>::const_iterator&
-                    current_block,
-                  std::size_t selected_row)
+  void operator()(const std::string& group_name,
+                  const std::string& dataset_name,
+                  const std::vector<illcrawl::math::scalar>& data)
   {
-    assert(_stored_datasets.size() == access.get_num_datasets());
+    std::string dataset_key =
+        dataset_descriptor{group_name, dataset_name}.get_identifier();
 
-    for(std::size_t i = 0; i < _stored_datasets.size(); ++i)
-    {
-      // Set the dataset shape, if it has not yet been set. This will
-      // only be the case for the first row that has been read.
-      // In exactly this case, the dimension of dataset_shapes[i] will still be
-      // 0 (because it is still uninitialized), and therefore different
-      // than the read dataset shape (which can never have a dimension of 0).
-      // In this case, set the dataset shape.
-      if(_dataset_shapes[i].size() != access.get_dataset_shape(i).size())
-      {
-        _dataset_shapes[i] = access.get_dataset_shape(i);
-        assert(_dataset_shapes[i].size() > 0);
-        _dataset_shapes[i][0] = 0;
-      }
-      
-      // Increase row count
-      assert(_dataset_shapes[i].size() > 0);
-      _dataset_shapes[i][0] += 1;
+    if(_row_widths[dataset_key] == 0)
+      _row_widths[dataset_key] = static_cast<hsize_t>(data.size());
 
-      access.select_dataset(i);
-      for(std::size_t j = 0; j < access.get_dataset_row_size(i); ++j)
-      {
-        _stored_datasets[i].push_back(access(current_block, selected_row, j));
-      }
-    }
+    // Make sure that the width of this row equals the width of previous
+    // rows from the same dataset
+    assert(_row_widths[dataset_key] == data.size());
+
+    std::vector<illcrawl::math::scalar>& dataset_storage =
+        this->_stored_datasets[dataset_key];
+
+    for(std::size_t i = 0; i < data.size(); ++i)
+      dataset_storage.push_back(data[i]);
   }
 
-  void clear()
-  {
-    _stored_datasets.clear();
-  }
-
-  void save_particles(const std::string& filename, unsigned part_type) const
+  void save_particles(const std::string& filename) const
   {
     illcrawl::io::hdf5_writer<illcrawl::math::scalar> writer{filename};
 
-    std::string group = "PartType"+std::to_string(part_type);
-    writer.add_group(group);
-
-    for(std::size_t i = 0; i < _stored_datasets.size(); ++i)
+    for(std::string group : _field_names.get_groups())
     {
-      std::string field_name = "Coordinates";
+      writer.add_group(group);
 
-      if(i != 0)
-        field_name = _field_names[i - 1];
+      for(std::string dataset : _field_names.get_datasets(group))
+      {
+        std::string dataset_key =
+            dataset_descriptor{group, dataset}.get_identifier();
 
-      std::vector<hsize_t> shape = _dataset_shapes[i];
-      if(shape.size() == 0)
-        shape.push_back(0);
+        std::vector<hsize_t> shape;
+        auto dataset_iterator = _stored_datasets.find(dataset_key);
+        auto row_width_iterator = _row_widths.find(dataset_key);
 
-      writer.add_dataset(group, field_name, shape, _stored_datasets[i]);
+        if(dataset_iterator == _stored_datasets.end() ||
+           row_width_iterator == _row_widths.end())
+        {
+          // If we have not stored any data related to this dataset, we simply
+          // write an empty dataset to the output file.
+          writer.add_dataset(group, dataset, std::vector<illcrawl::math::scalar>());
+        }
+        else
+        {
+          hsize_t row_width = row_width_iterator->second;
+          hsize_t num_rows = dataset_iterator->second.size() / row_width;
+
+          assert(dataset_iterator->second.size() % static_cast<std::size_t>(row_width) == 0);
+
+          std::vector<hsize_t> shape {num_rows, row_width};
+
+          writer.add_dataset(group, dataset, shape, dataset_iterator->second);
+        }
+      }
     }
 
   }
 
-  std::size_t get_num_stored_particles() const
+  std::size_t get_num_stored_particles(const std::string& group) const
   {
-    std::size_t num_particles = 0;
-    if(_dataset_shapes.size() > 0)
-      if(_dataset_shapes[0].size() > 0)
-        num_particles = _dataset_shapes[0][0];
-    return num_particles;
+    assert(_field_names.get_datasets(group).size() > 0);
+
+    std::string first_dataset = _field_names.get_datasets(group)[0];
+    std::string first_dataset_key =
+        dataset_descriptor{group, first_dataset}.get_identifier();
+
+    std::size_t result = 0;
+
+    auto storage_iterator = _stored_datasets.find(first_dataset_key);
+    auto row_size_iterator = _row_widths.find(first_dataset_key);
+
+    if(storage_iterator != _stored_datasets.end() &&
+       row_size_iterator != _row_widths.end())
+    {
+      assert(row_size_iterator->second != 0);
+      result = storage_iterator->second.size() / row_size_iterator->second;
+    }
+
+    return result;
   }
+
+
 private:
-  std::vector<std::string> _field_names;
-  std::vector<std::vector<illcrawl::math::scalar>> _stored_datasets;
-  std::vector<std::vector<hsize_t>> _dataset_shapes;
+  dataset_collection _field_names;
+  std::unordered_map<std::string, dataset_storage> _stored_datasets;
+  std::unordered_map<std::string, hsize_t> _row_widths;
 };
 
 class filter
@@ -234,17 +335,16 @@ class filter
 public:
   using selector_list = std::vector<std::pair<selector*,selected_particle_storage*>>;
 
-  filter(const std::vector<std::string>& included_fields,
+  filter(const dataset_collection& extracted_datasets,
          const selector_list& selectors)
-    : _included_fields(included_fields),
+    : _extracted_datasets(extracted_datasets),
       _selectors(selectors),
       _num_selected_particles{0}
   {
   }
 
   void operator()(const std::string& snapshot_prefix,
-                  int num_parts,
-                  unsigned part_type)
+                  int num_parts)
   {
     using illcrawl::math::scalar;
     using illcrawl::math::vector3;
@@ -256,6 +356,10 @@ public:
       num_parts = 1;
     }
 
+    const std::vector<std::string>& groups = _extracted_datasets.get_groups();
+    if(groups.size() == 0)
+      throw std::invalid_argument{"No data to extract."};
+
     for(int i = 0; i < num_parts; ++i)
     {
       std::string part_filename = snapshot_prefix;
@@ -265,53 +369,112 @@ public:
         part_filename += ".hdf5";
       }
 
-      std::cout << "Processing " << part_filename << std::endl;
+      std::cout << "Processing " << part_filename << std::endl;  
 
       illcrawl::io::illustris_data_loader loader{
         part_filename,
-        part_type
+        groups[0]
       };
 
-      std::vector<H5::DataSet> streamed_fields =
+      for(std::size_t group_id = 0; group_id  < groups.size(); ++group_id)
       {
-        {loader.get_dataset(illcrawl::io::illustris_data_loader::get_coordinate_identifier())}
-      };
+        std::string group_name = groups[group_id];
+        loader.select_group(groups[group_id]);
 
-      for(const auto& field : _included_fields)
-        streamed_fields.push_back(loader.get_dataset(field));
 
-      illcrawl::io::async_dataset_streamer<scalar> streamer{streamed_fields};
 
-      illcrawl::io::buffer_accessor<scalar> access = streamer.create_buffer_accessor();
-      illcrawl::io::async_for_each_block(streamer.begin_row_blocks(blocksize),
-                                         streamer.end_row_blocks(),
-                                         [&](const illcrawl::io::async_dataset_streamer<scalar>::const_iterator& current_block)
-      {
-        for(std::size_t i = 0; i < current_block.get_num_available_rows(); ++i)
+        std::vector<H5::DataSet> streamed_fields =
         {
-          // Coordinates always come first
-          access.select_dataset(0);
+          {loader.get_dataset(illcrawl::io::illustris_data_loader::get_coordinate_identifier())}
+        };
 
-          vector3 coordinates;
-          for(std::size_t j = 0; j < 3; ++j)
-            coordinates[j] = access(current_block, i, j);
+        const std::vector<std::string>& dataset_names
+            = _extracted_datasets.get_datasets(group_name);
 
-          for(auto& selector_handler_pair :  _selectors)
-            if((*selector_handler_pair.first)(coordinates))
-            {
-              (*selector_handler_pair.second)(access, current_block, i);
-              ++_num_selected_particles;
-            }
+        for(const auto& dataset_name : dataset_names)
+        {
+          streamed_fields.push_back(loader.get_dataset(dataset_name));
         }
-      });
 
-      std::cout << _num_selected_particles
-                << " particles are selected." << std::endl;
+        illcrawl::io::async_dataset_streamer<scalar> streamer{streamed_fields};
+
+        std::vector<illcrawl::math::scalar> extracted_data_buffer;
+        extracted_data_buffer.reserve(3);
+
+        illcrawl::io::buffer_accessor<scalar> access = streamer.create_buffer_accessor();
+        illcrawl::io::async_for_each_block(streamer.begin_row_blocks(blocksize),
+                                           streamer.end_row_blocks(),
+                                           [&](const illcrawl::io::async_dataset_streamer<scalar>::const_iterator& current_block)
+        {
+          for(std::size_t i = 0; i < current_block.get_num_available_rows(); ++i)
+          {
+            // Coordinates always come first
+            access.select_dataset(0);
+
+            vector3 coordinates;
+            for(std::size_t j = 0; j < 3; ++j)
+              coordinates[j] = access(current_block, i, j);
+
+            bool is_particle_selected = false;
+
+            // Iterate over all filters, and check if the data row (=particle)
+            // should be selected and stored, according to the filter
+            for(auto& selector_handler_pair :  _selectors)
+            {
+              if((*selector_handler_pair.first)(coordinates))
+              {
+                is_particle_selected = true;
+                // If the selector decides to include the particle based on its
+                // coordinates, call the data handler for each data field.
+                assert(dataset_names.size() + 1 == access.get_num_datasets());
+                for(std::size_t dataset_id = 0;
+                    dataset_id < dataset_names.size();
+                    ++dataset_id)
+                {
+                  std::string dataset_name = dataset_names[dataset_id];
+
+                  // Switch to the new dataset
+                  access.select_dataset(dataset_id + 1);
+                  extracted_data_buffer.clear();
+
+                  // Extract all elements of this data row and store in
+                  // extracted_data_buffer
+                  for(std::size_t j = 0;
+                      j < access.get_dataset_row_size(dataset_id + 1);
+                      ++j)
+                    extracted_data_buffer.push_back(access(current_block, i, j));
+
+                  (*selector_handler_pair.second)(group_name,
+                                                  dataset_name,
+                                                  extracted_data_buffer);
+
+                }
+
+              }
+            }
+            if(is_particle_selected)
+              ++_num_selected_particles;
+          }
+        });
+      }
+
+      std::size_t selector_id = 0;
+      for(const auto& selector_storage_pair : _selectors)
+      {
+        std::cout << "Filter " << selector_id << " has currently retrieved:" << std::endl;
+        for(const auto& group_name : _extracted_datasets.get_groups())
+          std::cout << "   from group " << group_name << ": "
+                    << selector_storage_pair.second->get_num_stored_particles(group_name)
+                    << " data rows" << std::endl;
+
+        ++selector_id;
+      }
     }
   }
 
 private:
-  std::vector<std::string> _included_fields;
+
+  dataset_collection _extracted_datasets;
   selector_list _selectors;
   std::size_t _num_selected_particles;
 };
@@ -325,15 +488,15 @@ int main(int argc, char** argv)
   po::options_description options{"Allowed options"};
   std::vector<std::string> sphere_filters;
   std::vector<std::string> cube_filters;
-  std::vector<std::string> extracted_fields;
+  std::vector<std::string> raw_extracted_fields;
 
   options.add_options()
       ("snapshot_prefix,p", po::value<std::string>()->default_value("snapshot_"), "set prefix for the filename of the snapshot chunks. "
                                        "E.g., if the snapshots are named snapshot_0-i.hdf5,"
                                        "with i being the chunk number, the prefix is snapshot_0-")
       ("num_snapshot_parts,n", po::value<int>(), "The number of snapshot chunks.")
-      ("extract,e", po::value<std::vector<std::string>>(&extracted_fields),
-                                       "fields which are extracted (apart from coordinates -- they are always extracted)")
+      ("extract,e", po::value<std::vector<std::string>>(&raw_extracted_fields),
+                                       "fields which are extracted. The format is hdf5_group:dataset, e.g. PartType0:Coordinates")
       ("sphere_filter", po::value<std::vector<std::string>>(&sphere_filters),
                                        "define a selection sphere. Format: --sphere_filter x,y,z,r,output_file")
       ("cube_filter", po::value<std::vector<std::string>>(&cube_filters),
@@ -362,9 +525,18 @@ int main(int argc, char** argv)
     std::cout << "Looking at " << num_snapshot_parts
               << " chunks with prefix " << snapshot_prefix << std::endl;
 
-    for(const auto& extracted_field : extracted_fields)
-      std::cout << "Extracting field: " << extracted_field << std::endl;
+    std::vector<dataset_descriptor> extracted_fields;
+    for(const auto& extracted_field : raw_extracted_fields)
+      extracted_fields.push_back(dataset_descriptor{extracted_field});
 
+    dataset_collection datasets{extracted_fields};
+
+    for(const auto& group : datasets.get_groups())
+    {
+      std::cout << "Extracting from group: " << group << std::endl;
+      for(const auto& dataset: datasets.get_datasets(group))
+        std::cout << "   " << dataset << std::endl;
+    }
 
     std::vector<std::unique_ptr<selector>> selectors;
     std::vector<std::unique_ptr<selected_particle_storage>> handlers;
@@ -398,7 +570,7 @@ int main(int argc, char** argv)
                             new sphere_selector{sphere_center, r}
                           });
       handlers.push_back(std::unique_ptr<selected_particle_storage>{
-                           new selected_particle_storage{extracted_fields}
+                           new selected_particle_storage{datasets}
                          });
 
       selector_handler_pairs.push_back(std::make_pair(selectors.back().get(),
@@ -434,24 +606,20 @@ int main(int argc, char** argv)
                             new cube_selector{cube_center, sidelength}
                           });
       handlers.push_back(std::unique_ptr<selected_particle_storage>{
-                           new selected_particle_storage{extracted_fields}
+                           new selected_particle_storage{datasets}
                          });
 
       selector_handler_pairs.push_back(std::make_pair(selectors.back().get(),
                                                       handlers.back().get()));
     }
 
-    filter data_filter{extracted_fields, selector_handler_pairs};
-    data_filter(snapshot_prefix, num_snapshot_parts, 0);
+    filter data_filter{datasets, selector_handler_pairs};
+    data_filter(snapshot_prefix, num_snapshot_parts);
 
-    for(std::size_t i = 0; i < handlers.size(); ++i)
-      std::cout << "Filter " << i
-                << " selected " << handlers[i]->get_num_stored_particles()
-                << " data points." << std::endl;
 
     std::cout << "Saving results..." << std::endl;
     for(std::size_t i = 0; i < handlers.size(); ++i)
-      handlers[i].get()->save_particles(output_files[i], 0);
+      handlers[i].get()->save_particles(output_files[i]);
 
   }
   catch(boost::bad_any_cast& e)

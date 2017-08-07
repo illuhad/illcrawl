@@ -45,6 +45,12 @@ public:
     select_group(particle_type_id);
   }
 
+  illustris_data_loader(const std::string& hdf5_filename, const std::string& group)
+    : _filename{hdf5_filename}, _file{hdf5_filename, H5F_ACC_RDONLY}
+  {
+    select_group(group);
+  }
+
   ~illustris_data_loader()
   {
     _file.close();
