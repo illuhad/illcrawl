@@ -32,7 +32,7 @@
 #include "async_io.hpp"
 #include "coordinate_system.hpp"
 
-const std::size_t blocksize = 10000000;
+const std::size_t blocksize = 5000000;
 const illcrawl::math::vector3 periodic_length = {{75000.,75000.,75000.}};
 
 class dataset_descriptor
@@ -369,7 +369,9 @@ public:
         part_filename += ".hdf5";
       }
 
+      std::cout << "==========================================\n";
       std::cout << "Processing " << part_filename << std::endl;  
+      std::cout << "==========================================\n";
 
       illcrawl::io::illustris_data_loader loader{
         part_filename,
@@ -381,7 +383,7 @@ public:
         std::string group_name = groups[group_id];
         loader.select_group(groups[group_id]);
 
-
+        std::cout << "Processing group " << group_name << std::endl;
 
         std::vector<H5::DataSet> streamed_fields =
         {
@@ -406,6 +408,11 @@ public:
                                            streamer.end_row_blocks(),
                                            [&](const illcrawl::io::async_dataset_streamer<scalar>::const_iterator& current_block)
         {
+          std::cout << "  Processing particles "
+                    << current_block.get_available_data_range_begin()
+                    << " to "
+                    << current_block.get_available_data_range_end() << std::endl;
+
           for(std::size_t i = 0; i < current_block.get_num_available_rows(); ++i)
           {
             // Coordinates always come first
