@@ -101,6 +101,25 @@ struct volume_cutout
   {}
 };
 
+/*
+class volumetric_reconstruction_backend
+{
+public:
+  using particle = device_vector4;
+
+  virtual void purge_state() = 0;
+
+  virtual void get_required_additional_datasets(std::vector<H5::DataSet>& datasets) = 0;
+
+  virtual void run(const cl::Buffer& reconstruction_point_coordinates,
+                   std::size_t       num_points) = 0;
+  virtual std::string get_backend_name() const = 0;
+
+  virtual void init_backend(const cl::Buffer& particles,
+                            std::size_t num_particles,
+                            std::size_t blocksize) = 0;
+};*/
+
 /// Reconstructs the value of a given quantity at a given (arbitrary) set of
 /// 3D evaluation points. The values are calculated by a inverse distance interpolation
 /// scheme using the 8 nearest neighbors.
