@@ -101,24 +101,47 @@ struct volume_cutout
   {}
 };
 
-/*
+
 class volumetric_reconstruction_backend
 {
 public:
-  using particle = device_vector4;
 
-  virtual void purge_state() = 0;
+  virtual std::vector<H5::DataSet> get_required_additional_datasets() const = 0;
 
-  virtual void get_required_additional_datasets(std::vector<H5::DataSet>& datasets) = 0;
+  virtual void process_particles(const cl::Buffer& evaluation_points,
+                                 std::size_t num_points) = 0;
 
-  virtual void run(const cl::Buffer& reconstruction_point_coordinates,
-                   std::size_t       num_points) = 0;
+  virtual const cl::Buffer& retrieve_results() const = 0;
+
   virtual std::string get_backend_name() const = 0;
 
-  virtual void init_backend(const cl::Buffer& particles,
-                            std::size_t num_particles,
-                            std::size_t blocksize) = 0;
-};*/
+  virtual void init_backend(std::size_t blocksize) = 0;
+
+  virtual void setup_particles(const cl::Buffer& particles,
+                               const std::vector<cl::Buffer>& additional_dataset,
+                               std::size_t num_particles) = 0;
+
+};
+
+namespace reconstruction_backends {
+
+class nn8 : public volumetric_reconstruction_backend
+{
+public:
+  virtual ~nn8(){}
+
+  virtual std::vector<H5::DataSet> get_required_additional_datasets() const
+  {
+    return std::vector<H5::DataSet>();
+  }
+
+  virtual std::string get_backend_name() const
+  {
+    return "volumetric/nn8";
+  }
+};
+
+}
 
 /// Reconstructs the value of a given quantity at a given (arbitrary) set of
 /// 3D evaluation points. The values are calculated by a inverse distance interpolation
