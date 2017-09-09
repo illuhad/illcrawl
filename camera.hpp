@@ -49,99 +49,49 @@ public:
          math::scalar roll_angle,
          math::scalar screen_width,
          std::size_t num_pix_x,
-         std::size_t num_pix_y)
-    : _position(position),
-      _look_at(look_at),
-      _pixel_size{screen_width/static_cast<math::scalar>(num_pix_x)},
-      _num_pixels{{num_pix_x, num_pix_y}},
-      _roll_angle{roll_angle}
-  {
-    update_basis_vectors();
-    update_min_position();
-  }
+         std::size_t num_pix_y);
 
   /// \return The number of pixels either in x or in y direction
   /// \param dim Speicifies the axis (x or y). Must be 0 for the
   /// x axis, and 1 for the y axis. Other values are not allowed.
-  std::size_t get_num_pixels(std::size_t dim) const
-  {
-    assert(dim < 2);
-    return _num_pixels[dim];
-  }
+  std::size_t get_num_pixels(std::size_t dim) const;
 
   /// \return The coordinates of the specified pixel
   /// \param x_index The index in x direction of the pixel
   /// \param x_index The index in y direction of the pixel
-  math::vector3 get_pixel_coordinate(std::size_t x_index, std::size_t y_index) const
-  {
-    return _min_position
-         + x_index * _pixel_size * _screen_basis_vector0
-         + y_index * _pixel_size * _screen_basis_vector1;
-  }
+  math::vector3 get_pixel_coordinate(std::size_t x_index, std::size_t y_index) const;
 
   /// \return The coordinates of the specified pixel
   /// \param x_index The index in x direction of the pixel
   /// \param x_index The index in y direction of the pixel
-  math::vector3 get_pixel_coordinate(math::scalar x_index, math::scalar y_index) const
-  {
-    return _min_position
-         + x_index * _pixel_size * _screen_basis_vector0
-         + y_index * _pixel_size * _screen_basis_vector1;
-  }
+  math::vector3 get_pixel_coordinate(math::scalar x_index, math::scalar y_index) const;
 
   /// \return The size of a pixel (i.e. the side length of the pixel square)
-  math::scalar get_pixel_size() const
-  {
-    return _pixel_size;
-  }
+  math::scalar get_pixel_size() const;
 
   /// \return The coordinates of the center of the pixel screen
-  const math::vector3& get_position() const
-  {
-    return _position;
-  }
+  const math::vector3& get_position() const;
 
   /// \return A normalized vector describing the direction the camera
   /// points to
-  const math::vector3& get_look_at() const
-  {
-    return _look_at;
-  }
+  const math::vector3& get_look_at() const;
 
   /// \return The basis vector for the x coordinate of the camera plane
-  const math::vector3& get_screen_basis_vector0() const
-  {
-    return _screen_basis_vector0;
-  }
+  const math::vector3& get_screen_basis_vector0() const;
 
   /// \return The basis vector for the y coordinate of the camera plane
-  const math::vector3& get_screen_basis_vector1() const
-  {
-    return _screen_basis_vector1;
-  }
+  const math::vector3& get_screen_basis_vector1() const;
 
   /// Set the position of the center of the pixel screen
   /// \param pos The new position
-  void set_position(const math::vector3& pos)
-  {
-    this->_position = pos;
-    update_min_position();
-  }
+  void set_position(const math::vector3& pos);
 
   /// \param look_at A normalized vector indicating the
   /// direction in which the camera 'looks'
-  void set_look_at(const math::vector3& look_at)
-  {
-    this->_look_at = look_at;
-    update_basis_vectors();
-    update_min_position();
-  }
+  void set_look_at(const math::vector3& look_at);
 
   /// \return The coordinates of the lower left corner of the pixel screen.
-  const math::vector3& get_screen_min_position() const
-  {
-    return _min_position;
-  }
+  const math::vector3& get_screen_min_position() const;
 
   /// Rotate the camera by applying a rotation matrix to the camera's
   /// position and look-at vector.
@@ -149,58 +99,14 @@ public:
   /// \param rotation_center The point around which the camera shall be
   /// rotated
   void rotate(const math::matrix3x3& rotation_matrix,
-              const math::vector3& rotation_center)
-  {
-    math::vector3 R = _position - rotation_center;
-    math::vector3 R_prime = math::matrix_vector_mult(rotation_matrix, R);
-    this->_position = R_prime + rotation_center;
-
-    this->_look_at = math::matrix_vector_mult(rotation_matrix, _look_at);
-
-    this->_screen_basis_vector0 =
-                     math::matrix_vector_mult(rotation_matrix, _screen_basis_vector0);
-    this->_screen_basis_vector1 =
-                     math::matrix_vector_mult(rotation_matrix, _screen_basis_vector1);
-
-    update_min_position();
-  }
-
+              const math::vector3& rotation_center);
 
 private:
   /// Calculates the basis vectors of the pixel screen.
-  void update_basis_vectors()
-  {
-    // Calculate screen basis vectors
-    math::vector3 v1 {{0, 0, 1}};
-
-    if (_look_at[0] == v1[0] &&
-        _look_at[1] == v1[1] &&
-        _look_at[2] == v1[2])
-    {
-      v1 = {{0, 1, 0}};
-    }
-
-    v1 = math::cross(v1, _look_at);
-    math::vector3 v2 = math::cross(_look_at, v1);
-
-    math::matrix3x3 roll_matrix;
-    math::matrix_create_rotation_matrix(&roll_matrix, _look_at, _roll_angle);
-
-    // Normalize vectors in case of rounding errors
-    this->_screen_basis_vector0 =
-        math::normalize(math::matrix_vector_mult(roll_matrix, v1));
-
-    this->_screen_basis_vector1 =
-        math::normalize(math::matrix_vector_mult(roll_matrix, v2));
-  }
+  void update_basis_vectors();
 
   /// Calculates the lower left coordinate of the pixel screen.
-  void update_min_position()
-  {
-    _min_position = _position;
-    _min_position -= (_num_pixels[0]/2.0) * _pixel_size * _screen_basis_vector0;
-    _min_position -= (_num_pixels[1]/2.0) * _pixel_size * _screen_basis_vector1;
-  }
+  void update_min_position();
 
   math::vector3 _position;
   math::vector3 _look_at;

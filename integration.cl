@@ -50,8 +50,8 @@ void rkf_advance(scalar* integration_state,
                  scalar* current_position,
                  scalar* current_step_size,
                  scalar* range_begin_evaluation,
-                 scalar tolerance,
-                 int is_relative_tolerance,
+                 scalar absolute_tolerance,
+                 scalar relative_tolerance,
                  scalar integration_end,
                  rkf_integrand_values evaluations,
                  rkf_evaluation_points* next_evaluation_points,
@@ -85,12 +85,12 @@ void rkf_advance(scalar* integration_state,
   if(delta4 != delta5)
   {
     scalar error = fabs(delta5 - delta4);
-    scalar absolute_tolerance = tolerance;
 
-    if(is_relative_tolerance)
-      absolute_tolerance = fabs(*integration_state / (*current_position) * tolerance);
+    scalar scaled_relative_tolerance = fabs(*integration_state / (*current_position) * tolerance);
 
-    s = pow(absolute_tolerance * (*current_step_size) / (2.f * error), 0.25f);
+    scalar overall_tolerance = fmax(absolute_tolerance, scaled_relative_tolerance);
+
+    s = pow(overall_tolerance * (*current_step_size) / (2.f * error), 0.25f);
   }
 
   scalar new_step_size = s * (*current_step_size);
@@ -140,8 +140,8 @@ __kernel void runge_kutta_fehlberg(__global scalar* integration_state,
                                    __global rkf_integrand_values* evaluations,
                                    __global scalar* range_begin_evaluation,
                                    int num_integrators,
-                                   scalar tolerance,
-                                   int is_relative_tolerance,
+                                   scalar absolute_tolerance,
+                                   scalar relative_tolerance,
                                    scalar integration_end,
                                    __global rkf_evaluation_points* next_evaluation_points_out,
                                    __global int* is_integrator_still_running)
@@ -167,7 +167,7 @@ __kernel void runge_kutta_fehlberg(__global scalar* integration_state,
                   &position,
                   &stepsize,
                   &first_evaluation,
-                  tolerance, is_relative_tolerance,
+                  absolute_tolerance, relative_tolerance,
                   integration_end,
                   evals,
                   &next_evaluation_points,

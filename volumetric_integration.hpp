@@ -19,33 +19,35 @@
  */
 
 
-#ifndef PARTICLE_DISTRIBUTION_HPP
-#define PARTICLE_DISTRIBUTION_HPP
+#ifndef VOLUMETRIC_INTEGRATION_HPP
+#define VOLUMETRIC_INTEGRATION_HPP
 
-#include <array>
-#include <limits>
-
-#include "async_io.hpp"
+#include "reconstructing_data_crawler.hpp"
 #include "math.hpp"
-
+#include "quantity.hpp"
+#include "integration.hpp"
 
 namespace illcrawl {
 
-class particle_distribution
+
+class volumetric_integration
 {
 public:
-  particle_distribution(const H5::DataSet& coordinates,
-                        const math::vector3& periodic_wraparound_size);
 
-  const math::vector3& get_extent_center() const;
+  volumetric_integration(const qcl::device_context_ptr& ctx,
+                         const camera& cam);
 
-  const math::vector3& get_distribution_size() const;
+  void create_projection(reconstructing_data_crawler& reconstruction,
+                         const reconstruction_quantity::quantity& reconstructed_quantity,
+                         math::scalar z_range,
+                         const integration::tolerance& integration_tolerance,
+                         util::multi_array<device_scalar>& output) const;
 
-  const math::vector3& get_mean_particle_position() const;
 private:
-  math::vector3 _distribution_center;
-  math::vector3 _distribution_size;
-  math::vector3 _mean_particle_position;
+
+
+  camera _cam;
+  qcl::device_context_ptr _ctx;
 };
 
 }

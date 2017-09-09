@@ -61,6 +61,8 @@ public:
 
   virtual const unit_converter& get_unit_converter() const = 0;
 
+  virtual bool is_quantity_baryonic() const = 0;
+
 };
 
 class illustris_quantity : public quantity
@@ -86,9 +88,14 @@ public:
 
   virtual ~illustris_quantity() {}
 
-  const unit_converter& get_unit_converter() const override
+  virtual const unit_converter& get_unit_converter() const override
   {
     return _converter;
+  }
+
+  virtual bool is_quantity_baryonic() const override
+  {
+    return true;
   }
 private:
   const io::illustris_data_loader* _data;
@@ -566,7 +573,7 @@ public:
     return ctx->get_kernel("unprocessed_quantity");
   }
 
-  virtual std::vector<math::scalar> get_quantitiy_scaling_factors() const
+  virtual std::vector<math::scalar> get_quantitiy_scaling_factors() const override
   {
     return std::vector<math::scalar>{{
         this->get_unit_converter().potential_conversion_factor()

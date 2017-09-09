@@ -99,7 +99,7 @@ private:
 /// output is to be written at all.
 
 template<class T>
-master_ostream& operator<<(master_ostream& ostr, const T& msg)
+static master_ostream& operator<<(master_ostream& ostr, const T& msg)
 {
   if (ostr.get_rank() == ostr.get_master_rank())
     (std::ostream&)ostr << msg;
@@ -108,8 +108,8 @@ master_ostream& operator<<(master_ostream& ostr, const T& msg)
 }
 
 /// This version enables the use of io manips
-master_ostream& operator<<(master_ostream& ostr,
-        master_ostream::io_manip_type io_manip)
+static master_ostream& operator<<(master_ostream& ostr,
+                                  master_ostream::io_manip_type io_manip)
 {
   if (ostr.get_rank() == ostr.get_master_rank())
     io_manip((std::ostream&)ostr);

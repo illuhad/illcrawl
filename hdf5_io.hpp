@@ -248,12 +248,6 @@ public:
                    const std::vector<hsize_t>& shape,
                    const std::vector<T>& data)
   {
-    std::cout << "shape: ";
-    for(std::size_t i = 0; i < shape.size(); ++i)
-      std::cout << shape[i] << " ";
-    std::cout << std::endl;
-
-    std::cout << "data length " << data.size() << std::endl;
 
     H5::DataSet dset = create_dataset(group_name, dataset_name, shape);
 

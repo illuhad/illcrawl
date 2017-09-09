@@ -27,6 +27,7 @@
 #include <memory>
 
 #include "multi_array.hpp"
+#include "work_partitioner.hpp"
 
 namespace illcrawl {
 namespace util{
@@ -312,19 +313,21 @@ private:
 
 #ifndef FITS_WITHOUT_MPI
 #include <boost/mpi.hpp>
-
+#include "work_partitioner.hpp"
 
 namespace illcrawl{
 namespace util {
 
 
-template<class Partitioner, class T>
+template<class T>
 class distributed_fits_slices
 {
 public:
-  distributed_fits_slices(const Partitioner& partitioning,
+  distributed_fits_slices(const work_partitioner& partitioning,
                           const std::string& filename)
-    : _comm{partitioning.get_communicator()}, _partitioning{partitioning}, _filename{filename}
+    : _comm{partitioning.get_communicator()},
+      _partitioning{std::move(partitioning.clone())},
+      _filename{filename}
   {}
 
   void load(util::multi_array<T>& out) const
@@ -344,11 +347,11 @@ public:
         for(std::size_t i = 0; i < naxes.size(); ++i)
           array_sizes.push_back(static_cast<std::size_t>(naxes[i]));
 
-        _partitioning.run(array_sizes[2]);
-        out = util::multi_array<T>(array_sizes[0], array_sizes[1], _partitioning.get_num_local_jobs());
+        _partitioning->run(array_sizes[2]);
+        out = util::multi_array<T>(array_sizes[0], array_sizes[1], _partitioning->get_num_local_jobs());
 
-        long fpixel [3] = {1, 1, _partitioning.own_begin() + 1};
-        long lpixel [3] = {array_sizes[0], array_sizes[1], _partitioning.own_end()};
+        long fpixel [3] = {1, 1, _partitioning->own_begin() + 1};
+        long lpixel [3] = {array_sizes[0], array_sizes[1], _partitioning->own_end()};
         long inc [3] = {1, 1, 1};
 
         fits_read_subset(file, fits_datatype<T>::datatype(),
@@ -377,7 +380,7 @@ public:
       long naxes [3] = {
         static_cast<long>(data.get_extent_of_dimension(0)),
         static_cast<long>(data.get_extent_of_dimension(1)),
-        static_cast<long>(_partitioning.get_num_global_jobs())
+        static_cast<long>(_partitioning->get_num_global_jobs())
       };
 
       // cfitsio will only overwrite files when their names are preceded by an
@@ -407,11 +410,11 @@ public:
     if(fits_open_file(&file, _filename.c_str(), READWRITE, &status))
       throw std::runtime_error(std::string("Could not load fits file: ") + _filename);
 
-    long fpixel [] = {1, 1, static_cast<long>(_partitioning.own_begin()) + 1};
+    long fpixel [] = {1, 1, static_cast<long>(_partitioning->own_begin()) + 1};
     long lpixel [] = {
       static_cast<long>(data.get_extent_of_dimension(0)),
       static_cast<long>(data.get_extent_of_dimension(1)),
-      static_cast<long>(_partitioning.own_end())
+      static_cast<long>(_partitioning->own_end())
     };
 
     fits_write_subset(file,
@@ -425,7 +428,7 @@ public:
 
 private:
   boost::mpi::communicator _comm;
-  Partitioner _partitioning;
+  std::unique_ptr<work_partitioner> _partitioning;
   std::string _filename;
 };
 

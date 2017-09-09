@@ -18,34 +18,32 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#ifndef VOLUMETRIC_SLICE_HPP
+#define VOLUMETRIC_SLICE_HPP
 
-#ifndef PARTICLE_DISTRIBUTION_HPP
-#define PARTICLE_DISTRIBUTION_HPP
-
-#include <array>
-#include <limits>
-
-#include "async_io.hpp"
-#include "math.hpp"
-
+#include <vector>
+#include <algorithm>
+#include "multi_array.hpp"
+#include "camera.hpp"
+#include "reconstructing_data_crawler.hpp"
 
 namespace illcrawl {
 
-class particle_distribution
+class volumetric_slice
 {
 public:
-  particle_distribution(const H5::DataSet& coordinates,
-                        const math::vector3& periodic_wraparound_size);
 
-  const math::vector3& get_extent_center() const;
+  volumetric_slice(const camera& cam);
 
-  const math::vector3& get_distribution_size() const;
+  void create_slice(reconstructing_data_crawler& reconstruction,
+           const reconstruction_quantity::quantity& reconstructed_quantity,
+           util::multi_array<device_scalar>& output,
+           std::size_t num_additional_samples = 0) const;
 
-  const math::vector3& get_mean_particle_position() const;
 private:
-  math::vector3 _distribution_center;
-  math::vector3 _distribution_size;
-  math::vector3 _mean_particle_position;
+
+
+  camera _cam;
 };
 
 }

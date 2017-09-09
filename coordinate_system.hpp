@@ -22,11 +22,11 @@ namespace coordinate_system{
 /// layer around the box to increase its size.
 /// \param coordinates the coordinates of the point to process.
 template<std::size_t N>
-void correct_periodicity(const math::vector_n<N>& render_volume_bounding_box_min,
-                         const math::vector_n<N>& render_volume_bounding_box_max,
-                         const math::vector_n<N>& periodic_wraparound_size,
-                         math::scalar additional_tolerance,
-                         math::vector_n<N>& coordinates)
+static void correct_periodicity(const math::vector_n<N>& render_volume_bounding_box_min,
+                                const math::vector_n<N>& render_volume_bounding_box_max,
+                                const math::vector_n<N>& periodic_wraparound_size,
+                                math::scalar additional_tolerance,
+                                math::vector_n<N>& coordinates)
 {
   auto grid_min_coordinates = render_volume_bounding_box_min;
   auto grid_max_coordinates = render_volume_bounding_box_max;
@@ -60,10 +60,10 @@ void correct_periodicity(const math::vector_n<N>& render_volume_bounding_box_min
 /// layer around the box to increase its size.
 /// \param coordinates the coordinates of the point to process.
 template<std::size_t N>
-void correct_periodicity(const util::grid_coordinate_translator<N>& grid_translator,
-                         const math::vector_n<N>& periodic_wraparound_size,
-                         math::scalar additional_tolerance,
-                         math::vector_n<N>& coordinates)
+static void correct_periodicity(const util::grid_coordinate_translator<N>& grid_translator,
+                                const math::vector_n<N>& periodic_wraparound_size,
+                                math::scalar additional_tolerance,
+                                math::vector_n<N>& coordinates)
 {
   correct_periodicity(grid_translator.get_grid_min_corner(),
                       grid_translator.get_grid_max_corner(),
@@ -81,9 +81,9 @@ void correct_periodicity(const util::grid_coordinate_translator<N>& grid_transla
 /// of a period for each dimension
 /// \param pivot The pivot point
 /// \param coordinates the coordinates of the point to process.
-void correct_periodicity(const math::vector3& periodic_wraparound_size,
-                         const math::vector3& pivot,
-                         math::vector3& coordinates)
+static void correct_periodicity(const math::vector3& periodic_wraparound_size,
+                                const math::vector3& pivot,
+                                math::vector3& coordinates)
 {
   for(std::size_t i = 0; i < 3; ++i)
   {

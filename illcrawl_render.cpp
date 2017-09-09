@@ -26,17 +26,19 @@
 #include "hdf5_io.hpp"
 #include "particle_distribution.hpp"
 #include "qcl.hpp"
-#include "reconstruction.hpp"
-#include "volumetric_reconstruction.hpp"
+#include "reconstructing_data_crawler.hpp"
+#include "volumetric_integration.hpp"
+#include "volumetric_slice.hpp"
+#include "volumetric_tomography.hpp"
 #include "environment.hpp"
 #include "master_ostream.hpp"
 #include "tree_ostream.hpp"
-#include "partitioner.hpp"
+#include "work_partitioner.hpp"
 #include "animation.hpp"
 #include "spectrum.hpp"
+#include "uniform_work_partitioner.hpp"
 
-
-#include "illcrawl.hpp"
+#include "illcrawl_app.hpp"
 
 
 using illcrawl::math::scalar;
@@ -74,14 +76,13 @@ struct command_line_options
   std::size_t resolution_y;
 };
 
-template<class Partitioner>
-void
-save_distributed_fits(const Partitioner& partitioning,
+
+void save_distributed_fits(const illcrawl::work_partitioner& partitioning,
                            const std::string& filename,
                            const render_result& data)
 {
 
-  illcrawl::util::distributed_fits_slices<Partitioner, device_scalar>
+  illcrawl::util::distributed_fits_slices<device_scalar>
       result_file
   {
     partitioning,
@@ -91,43 +92,35 @@ save_distributed_fits(const Partitioner& partitioning,
   result_file.save(data);
 }
 
-template<class Spectrum_quantity_creator,
-         class Volumetric_reconstructor,
-         class Tolerance_type>
+template<class Spectrum_quantity_creator>
 void create_spectrum(const illcrawl::illcrawl_app& app,
                      const Spectrum_quantity_creator& quantity_gen,
-                     Volumetric_reconstructor& reconstructor,
+                     illcrawl::reconstructing_data_crawler& reconstructor,
                      const illcrawl::camera& cam,
-                     const Tolerance_type& tol,
+                     const illcrawl::integration::tolerance& tol,
                      std::size_t num_energies,
                      const std::string& result_filename,
                      render_result& result)
 {
-  illcrawl::spectrum::spectrum_generator
-  <
-      Volumetric_reconstructor,
-      illcrawl::uniform_work_partitioner
-  > spectrum{
+  illcrawl::spectrum::spectrum_generator spectrum{
     app.get_environment().get_compute_device(),
-    illcrawl::uniform_work_partitioner{app.get_environment().get_communicator()},
-    reconstructor
+    &reconstructor,
+    illcrawl::uniform_work_partitioner{app.get_environment().get_communicator()}
   };
 
   spectrum(cam, tol, app.get_recommended_integration_depth(), quantity_gen, num_energies, result);
   save_distributed_fits(spectrum.get_partitioning(), result_filename, result);
 }
 
-template<class Tolerance_type, class Volumetric_reconstructor>
 void run(const illcrawl::illcrawl_app& app,
          const command_line_options& options,
-         const Tolerance_type& tol,
-         Volumetric_reconstructor& reconstructor,
+         const illcrawl::integration::tolerance& tol,
+         illcrawl::reconstructing_data_crawler& reconstructor,
+         const std::unique_ptr<illcrawl::reconstruction_quantity::quantity>& quantity,
          const illcrawl::quantity_command_line_parser& quantity_parser)
 {
   render_result result;
 
-  std::unique_ptr<illcrawl::reconstruction_quantity::quantity> quantity =
-      quantity_parser.create_quantity(app);
 
   illcrawl::camera cam = app.create_distribution_centered_camera(options.resolution_x, options.resolution_y);
   std::string camera_name = "camera";
@@ -136,7 +129,7 @@ void run(const illcrawl::illcrawl_app& app,
   {
     app.output_stream() << "Starting volumetric/integrative projection..." << std::endl;
 
-    illcrawl::volumetric_integration<Volumetric_reconstructor> integrator{
+    illcrawl::volumetric_integration integrator{
       app.get_environment().get_compute_device(),
       cam
     };
@@ -208,20 +201,15 @@ void run(const illcrawl::illcrawl_app& app,
     };
 
 
-    illcrawl::frame_rendering::integrated_projection
-    <
-      Volumetric_reconstructor,
-      Tolerance_type
-    > frame_renderer {
+    illcrawl::frame_rendering::integrated_projection frame_renderer {
       app.get_environment().get_compute_device(),
       *quantity, // reconstructed quantity
       app.get_recommended_integration_depth(), // integration depth
       tol, // integration tolerance
-      reconstructor // reconstruction engine
+      &reconstructor // reconstruction engine
     };
 
-    illcrawl::distributed_animation<illcrawl::uniform_work_partitioner>
-    animation{
+    illcrawl::distributed_animation animation{
       illcrawl::uniform_work_partitioner{app.get_environment().get_communicator()},
       frame_renderer,
       camera_mover,
@@ -238,12 +226,7 @@ void run(const illcrawl::illcrawl_app& app,
 
     app.output_stream() << "Starting tomography..." << std::endl;
 
-    illcrawl::distributed_volumetric_tomography
-    <
-      Volumetric_reconstructor,
-      illcrawl::uniform_work_partitioner
-    >
-    tomography{
+    illcrawl::distributed_volumetric_tomography tomography{
       illcrawl::uniform_work_partitioner{app.get_environment().get_communicator()},
       cam
     };
@@ -336,29 +319,25 @@ int main(int argc, char** argv)
   {
     app.parse_command_line();
 
-    illcrawl::integration::absolute_tolerance<scalar> abs_tol{cmd_options.absolute_tolerance};
-    illcrawl::integration::relative_tolerance<scalar> rel_tol{cmd_options.relative_tolerance};
+    std::unique_ptr<illcrawl::reconstruction_quantity::quantity> quantity =
+        quantity_parser.create_quantity(app);
 
-    if(cmd_options.absolute_tolerance > 0.0 && cmd_options.relative_tolerance > 0.0)
-      throw std::invalid_argument{"Absolute and relative tolerances cannot both be set; they are mutually exclusive."};
-    if(cmd_options.absolute_tolerance <= 0.0 && cmd_options.relative_tolerance <= 0.0)
-      throw std::invalid_argument{"Absolute and relative tolerances cannot both be 0 - exactly one of them must be greater than 0."};
+    illcrawl::integration::tolerance tol{cmd_options.absolute_tolerance, cmd_options.relative_tolerance};
+
+    if(cmd_options.absolute_tolerance <= 0.0 || cmd_options.relative_tolerance <= 0.0)
+      throw std::invalid_argument{"Either absolute integration tolerance or relative tolerance has to be > 0"};
 
     const std::size_t blocksize = 40000000;
 
-    illcrawl::volumetric_nn8_reconstruction reconstructor{
+    illcrawl::reconstructing_data_crawler reconstructor{
+      app.create_reconstruction_backend(*quantity),
       app.get_environment().get_compute_device(),
       app.get_gas_distribution_volume_cutout(),
       app.get_data_loader().get_coordinates(),
-      app.get_data_loader().get_smoothing_length(),
       blocksize
     };
 
-    if(cmd_options.absolute_tolerance > 0.0)
-      run(app, cmd_options, abs_tol, reconstructor, quantity_parser);
-    else
-      run(app, cmd_options, rel_tol, reconstructor, quantity_parser);
-
+    run(app, cmd_options, tol, reconstructor, quantity, quantity_parser);
   }
   catch(boost::program_options::error& e)
   {
@@ -372,11 +351,6 @@ int main(int argc, char** argv)
   {
     std::cout << "Fatal error occured." << std::endl;
   }
-
-
-  //illcrawl::volumetric_slice<illcrawl::volumetric_nn8_reconstruction> slice{cam};
-  //slice.create_slice(reconstructor, *xray_emission, result, 0);
-
 
   return 0;
 }

@@ -70,24 +70,7 @@ class uniform_sphere_surface
 {
 public:
 
-  inline
-  math::vector3 operator()(const random_number_generator& rng) const
-  {
-    math::scalar x1, x2;
-    math::scalar r;
-    do
-    {
-      x1 = rng.uniform_real<math::scalar>(-1., 1.);
-      x2 = rng.uniform_real<math::scalar>(-1., 1.);
-      r = x1*x1 + x2*x2;
-    } while(r > 1.);
-
-    math::scalar sqrt_term = std::sqrt(1. - r);
-
-    return {{2 * x1 * sqrt_term,
-             2 * x2 * sqrt_term,
-             1 - 2 * r}};
-  }
+  math::vector3 operator()(const random_number_generator& rng) const;
 };
 
 /// Uniformly samples the volume of the unit sphere
@@ -95,45 +78,17 @@ class uniform_sphere_volume
 {
 public:
 
-  inline
-  math::vector3 operator()(const random_number_generator& rng) const
-  {
-    math::scalar x1,x2,x3;
-    math::scalar r;
-    do
-    {
-      x1 = rng.uniform_real<math::scalar>(-1., 1.);
-      x2 = rng.uniform_real<math::scalar>(-1., 1.);
-      x3 = rng.uniform_real<math::scalar>(-1., 1.);
-
-      r = x1*x1 + x2*x2 + x3*x3;
-    } while(r > 1.);
-
-    return {{x1, x2, x3}};
-  }
+  math::vector3 operator()(const random_number_generator& rng) const;
 };
 
 /// Uniformly sample a spherical shell
 class uniform_spherical_shell
 {
 public:
-  uniform_spherical_shell(math::scalar r_min, math::scalar r_max)
-    : _r_min{r_min},
-      _r_max{r_max},
-      _u_min{r_min * r_min * r_min},
-      _u_max{r_max * r_max * r_max}
-  {}
+  uniform_spherical_shell(math::scalar r_min, math::scalar r_max);
 
-  inline
-  math::vector3 operator()(const random_number_generator& rng) const
-  {
-    uniform_sphere_surface surface_sampler;
-    // First sample point on surface
-    math::vector3 sample = surface_sampler(rng);
-    // Then correct radius
-    math::scalar u = rng.uniform_real<math::scalar>(_u_min, _u_max);
-    return std::cbrt(u) * sample;
-  }
+
+  math::vector3 operator()(const random_number_generator& rng) const;
 
 private:
 

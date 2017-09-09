@@ -19,8 +19,8 @@
  */
 
 
-#ifndef RECONSTRUCTION_HPP
-#define RECONSTRUCTION_HPP
+#ifndef PROJECTIVE_SMOOTHING_RECONSTRUCTION_HPP
+#define PROJECTIVE_SMOOTHING_RECONSTRUCTION_HPP
 
 #include <vector>
 #include <cmath>
@@ -42,7 +42,7 @@ namespace illcrawl {
 
 
 //template<class Input_data_type>
-class smoothed_quantity_reconstruction2D
+class projective_smoothing_reconstructor
 {
 public:
 
@@ -50,7 +50,7 @@ public:
 
   using coordinate_transformator = std::function<math::vector3(const math::vector3)>;
 
-  smoothed_quantity_reconstruction2D(const qcl::device_context_ptr& ctx,
+  projective_smoothing_reconstructor(const qcl::device_context_ptr& ctx,
                                      const std::string& reconstruction_kernel2d_name
                                      ="image_tile_based_reconstruction2D")
     : _ctx{ctx},

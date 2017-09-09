@@ -29,8 +29,11 @@
 
 #include "math.hpp"
 #include "camera.hpp"
-#include "volumetric_reconstruction.hpp"
+#include "reconstructing_data_crawler.hpp"
 #include "quantity.hpp"
+#include "work_partitioner.hpp"
+#include "multi_array.hpp"
+#include "integration.hpp"
 
 namespace illcrawl {
 
@@ -76,11 +79,7 @@ public:
   /// \param initial_camera The initial camera state
   animation(const frame_renderer& renderer,
             const camera_stepper& stepper,
-            const camera& initial_camera)
-    : _renderer{renderer},
-      _stepper{stepper},
-      _cam{initial_camera}
-  {}
+            const camera& initial_camera);
 
   virtual ~animation(){}
 
@@ -91,12 +90,7 @@ public:
   /// animation.
   /// \param out An array to hold the result of the animation. This array does not yet need
   /// to initialized; it will be properly initialized by this function.
-  virtual void operator()(std::size_t num_frames, util::multi_array<device_scalar>& out)
-  {
-    (*this)(0, num_frames, num_frames, out);
-  }
-
-
+  virtual void operator()(std::size_t num_frames, util::multi_array<device_scalar>& out);
 
 protected:
   /// \param first_frame The first frame of the frame range that should be
@@ -108,38 +102,7 @@ protected:
   void operator()(std::size_t first_frame,
                   std::size_t end_frame,
                   std::size_t total_frame_range,
-                  util::multi_array<device_scalar>& out)
-  {
-    if(first_frame == end_frame)
-      return;
-
-    assert(end_frame > first_frame);
-
-    out = util::multi_array<device_scalar>{
-        _cam.get_num_pixels(0),
-        _cam.get_num_pixels(1),
-        end_frame - first_frame
-    };
-
-    util::multi_array<device_scalar> frame;
-    for(std::size_t i = first_frame; i < end_frame; ++i)
-    {
-      _stepper(i, total_frame_range, _cam);
-      _renderer(_cam, i, total_frame_range, frame);
-
-      assert(frame.get_extent_of_dimension(0) == _cam.get_num_pixels(0));
-      assert(frame.get_extent_of_dimension(1) == _cam.get_num_pixels(1));
-
-      // Copy rendered frame to result cube
-      for(std::size_t y = 0; y < _cam.get_num_pixels(1); ++y)
-        for(std::size_t x = 0; x < _cam.get_num_pixels(0); ++x)
-        {
-          std::size_t idx2 [] = {x,y};
-          std::size_t idx3 [] = {x,y, i - first_frame};
-          out[idx3] = frame[idx2];
-        }
-    }
-  }
+                  util::multi_array<device_scalar>& out);
 
 private:
 
@@ -154,11 +117,6 @@ private:
 /// The parallelization is done by partitioning the frames to render
 /// across the parallel processes, such that each process only
 /// needs to compute a subset of the overall animation.
-/// \tparam Partitioner The type of the partitioner that will
-/// be used to partition the work. Must fulfill the partitioner concept
-/// -- see the implementation of \c uniform_work_partitioner for an
-/// example.
-template<class Partitioner>
 class distributed_animation : public animation
 {
 public:
@@ -169,13 +127,10 @@ public:
   /// \param stepper The \c camera_stepper that will be used to update the camera's position and
   /// look-at vector after every frame.
   /// \param initial_camera The initial camera state
-  distributed_animation(const Partitioner& partitioner,
+  distributed_animation(const work_partitioner& partitioner,
                         const frame_renderer& renderer,
                         const camera_stepper& stepper,
-                        const camera& initial_camera)
-    : animation{renderer, stepper, initial_camera},
-      _partitioner{partitioner}
-  {}
+                        const camera& initial_camera);
 
   /// Renders the animation
   /// \param num_frames the total (global) number of frames to render
@@ -183,23 +138,15 @@ public:
   /// assigned to this process. The overall result is distributed across the memory of all parallel
   /// processes. It is the responsibility of the user to gather all local results, if this is required.
   virtual void operator()(std::size_t num_frames,
-                          util::multi_array<device_scalar>& local_result) override
-  {
-    _partitioner.run(num_frames);
-
-    animation::operator ()(_partitioner.own_begin(), _partitioner.own_end(), num_frames, local_result);
-  }
+                          util::multi_array<device_scalar>& local_result) override;
 
   virtual ~distributed_animation(){}
 
   /// \return The partitioner that has been used to distribute the work, and holds
   /// the information which frames of the animation this process has rendered.
-  const Partitioner& get_partitioning() const
-  {
-    return _partitioner;
-  }
+  const work_partitioner& get_partitioning() const;
 private:
-  Partitioner _partitioner;
+  std::unique_ptr<work_partitioner> _partitioner;
 };
 
 namespace camera_movement {
@@ -221,13 +168,7 @@ public:
   rotation_around_point(const math::vector3& center,
                         const camera& cam,
                         rotation_matrix_creator matrix_creator,
-                        math::scalar rotation_range_degree = 360.0)
-    : _rotation_center(center),
-      _rotation_range{(2.0 * M_PI / 360.0) * rotation_range_degree},
-      _initial_camera{cam},
-      _rotation_creator{matrix_creator}
-  {
-  }
+                        math::scalar rotation_range_degree = 360.0);
 
   /// \param center The center of the rotation
   /// \param axis The rotation axis (must be a normalized vector)
@@ -236,20 +177,7 @@ public:
   rotation_around_point(const math::vector3& center,
                         const math::vector3& axis,
                         const camera& cam,
-                        math::scalar rotation_range_degree = 360.0)
-    : _rotation_center(center),
-      _rotation_range{(2.0 * M_PI / 360.0) * rotation_range_degree},
-      _initial_camera{cam}
-  {
-    _rotation_creator = [axis](math::scalar alpha) -> math::matrix3x3
-    {
-      math::matrix3x3 rotation;
-      math::matrix_create_rotation_matrix(&rotation,
-                                          axis,
-                                          alpha);
-      return rotation;
-    };
-  }
+                        math::scalar rotation_range_degree = 360.0);
 
   /// Rotate the camera position and look-at vector
   /// \param frame_id The id of the frame of which the rotation state shall be adopted
@@ -257,24 +185,10 @@ public:
   /// the rotation angle is \c _rotation_range.
   /// \param num_frames The total number of frames
   /// \param cam the camera object that shall be rotated
-  void operator()(std::size_t frame_id, std::size_t num_frames, camera& cam) const
-  {
-    math::scalar angle_per_frame = _rotation_range / static_cast<math::scalar>(num_frames);
-
-    math::matrix3x3 rotation_matrix = _rotation_creator(frame_id * angle_per_frame);
-
-    // Reset camera to initial animation state
-    cam = _initial_camera;
-    // Now apply rotation to current state
-    cam.rotate(rotation_matrix, _rotation_center);
-  }
+  void operator()(std::size_t frame_id, std::size_t num_frames, camera& cam) const;
 
   /// Sets the function that is used to generate the rotation matrix.
-  void set_rotation_matrix_creator(rotation_matrix_creator creator)
-  {
-    _rotation_creator = creator;
-  }
-
+  void set_rotation_matrix_creator(rotation_matrix_creator creator);
 private:
   math::vector3 _rotation_center;
 
@@ -303,18 +217,7 @@ public:
                                    const math::vector3& theta_axis,
                                    const camera& cam,
                                    math::scalar rotation_range_phi_degree = 360.0,
-                                   math::scalar rotation_range_theta_degree = 360.0)
-  : _rotation{center, phi_axis, cam, rotation_range_phi_degree}
-  {
-    auto rotation_creator =
-    [phi_axis, theta_axis, rotation_range_phi_degree, rotation_range_theta_degree](math::scalar alpha_phi)
-    {
-      math::scalar alpha_theta = alpha_phi * (rotation_range_theta_degree / rotation_range_phi_degree);
-      return generate_rotation_matrix(alpha_phi, alpha_theta, phi_axis, theta_axis);
-    };
-
-    _rotation.set_rotation_matrix_creator(rotation_creator);
-  }
+                                   math::scalar rotation_range_theta_degree = 360.0);
 
   /// Rotate the camera position and look-at vector
   /// \param frame_id The id of the frame of which the rotation state shall be adopted
@@ -322,10 +225,7 @@ public:
   /// the rotation angle is \c _rotation_range.
   /// \param num_frames The total number of frames
   /// \param cam the camera object that shall be rotated
-  void operator()(std::size_t frame_id, std::size_t num_frames, camera& cam)
-  {
-    _rotation(frame_id, num_frames, cam);
-  }
+  void operator()(std::size_t frame_id, std::size_t num_frames, camera& cam);
 
 private:
   /// generate a matrix for the rotation around two axes.
@@ -336,14 +236,7 @@ private:
   static math::matrix3x3 generate_rotation_matrix(math::scalar alpha_phi,
                                                   math::scalar alpha_theta,
                                                   const math::vector3& phi_axis,
-                                                  const math::vector3& theta_axis)
-  {
-    math::matrix3x3 M_phi, M_theta;
-    math::matrix_create_rotation_matrix(&M_phi, phi_axis, alpha_phi);
-    math::matrix_create_rotation_matrix(&M_theta, theta_axis, alpha_theta);
-
-    return math::matrix_matrix_mult(M_phi, M_theta);
-  }
+                                                  const math::vector3& theta_axis);
 
   rotation_around_point _rotation;
 };
@@ -370,8 +263,6 @@ namespace frame_rendering {
 /// Satisifies the \c animation::frame_renderer concept. An implementation
 /// of a \c frame_renderer that renders images using the \c volumetric_integration,
 /// i.e. an image is rendered by integrating through the reconstruction of a quantity.
-template<class Volumetric_reconstructor,
-         class Integration_tolerance_type>
 class integrated_projection
 {
 public:
@@ -383,16 +274,8 @@ public:
   integrated_projection(const qcl::device_context_ptr& ctx,
               const reconstruction_quantity::quantity& reconstructed_quantity,
               math::scalar integration_depth,
-              const Integration_tolerance_type& tol,
-              Volumetric_reconstructor& reconstructor)
-    : _ctx{ctx},
-      _reconstructed_quantity{reconstructed_quantity},
-      _integration_range{integration_depth},
-      _tolerance{tol},
-      _reconstructor{reconstructor}
-  {
-    assert(_ctx != nullptr);
-  }
+              const integration::tolerance& tol,
+              reconstructing_data_crawler* reconstructor);
 
   /// Renders a frame
   /// \param cam The camera object describing position, look-at, resolution etc of
@@ -404,29 +287,18 @@ public:
   void operator()(const camera& cam,
                   std::size_t frame_id,
                   std::size_t num_frames,
-                  util::multi_array<device_scalar>& out)
-  {
-    volumetric_integration<Volumetric_reconstructor> integrator{_ctx, cam};
-
-    integrator.create_projection(_reconstructor,
-                                 _reconstructed_quantity,
-                                 _integration_range,
-                                 _tolerance,
-                                 out);
-  }
+                  util::multi_array<device_scalar>& out);
 
 private:
   qcl::device_context_ptr _ctx;
   const reconstruction_quantity::quantity& _reconstructed_quantity;
 
   math::scalar _integration_range;
-  Integration_tolerance_type _tolerance;
+  integration::tolerance _tolerance;
 
-  Volumetric_reconstructor _reconstructor;
+  reconstructing_data_crawler* _reconstructor;
 };
 
-template<class Volumetric_reconstructor,
-         class Integration_tolerance_type>
 class multi_quantity_integrated_projection
 {
 public:
@@ -438,44 +310,22 @@ public:
 
   multi_quantity_integrated_projection(const qcl::device_context_ptr& ctx,
                                        math::scalar integration_depth,
-                                       const Integration_tolerance_type& tol,
-                                       Volumetric_reconstructor& reconstructor,
-                                       const quantity_generator& create_quantity)
-    : _ctx{ctx},
-      _integration_range{integration_depth},
-      _tolerance{tol},
-      _reconstructor{reconstructor},
-      _create_quantity{create_quantity}
-  {
-    assert(_ctx != nullptr);
-  }
+                                       const integration::tolerance& tol,
+                                       reconstructing_data_crawler* reconstructor,
+                                       const quantity_generator& create_quantity);
 
 
 
   void operator()(const camera& cam,
                   std::size_t frame_id,
                   std::size_t num_frames,
-                  util::multi_array<device_scalar>& out)
-  {
-    // This is a workaround to force the reconstructors to recalculate
-    // the quantities - otherwise the reconstructor will assume that
-    // nothing has changed and reuse the previous state.
-    _reconstructor.purge_state();
-
-    volumetric_integration<Volumetric_reconstructor> integrator{_ctx, cam};
-
-    integrator.create_projection(_reconstructor,
-                                 *_create_quantity(cam, frame_id, num_frames),
-                                 _integration_range,
-                                 _tolerance,
-                                 out);
-  }
+                  util::multi_array<device_scalar>& out);
 
 private:
   qcl::device_context_ptr _ctx;
   math::scalar _integration_range;
-  Integration_tolerance_type _tolerance;
-  Volumetric_reconstructor _reconstructor;
+  integration::tolerance _tolerance;
+  reconstructing_data_crawler* _reconstructor;
   quantity_generator _create_quantity;
 };
 
@@ -483,16 +333,11 @@ private:
 class single_quantity_generator
 {
 public:
-  single_quantity_generator(const std::shared_ptr<reconstruction_quantity::quantity>& q)
-    : _quantity{q}
-  {}
+  single_quantity_generator(const std::shared_ptr<reconstruction_quantity::quantity>& q);
 
   std::shared_ptr<reconstruction_quantity::quantity> operator()(const camera& cam,
                                                       std::size_t frame_id,
-                                                      std::size_t num_frames) const
-  {
-    return _quantity;
-  }
+                                                      std::size_t num_frames) const;
 private:
   std::shared_ptr<reconstruction_quantity::quantity> _quantity;
 };

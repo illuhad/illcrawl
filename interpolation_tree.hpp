@@ -154,8 +154,7 @@ public:
                      const cl::Buffer& out,
                      std::size_t num_points,
                      device_scalar opening_angle,
-                     cl::Event* evt,
-                     bool retain_results = false) const
+                     cl::Event* evt) const
   {
     qcl::kernel_argument_list arguments{_kernel};
     arguments.push(static_cast<cl_int>(_is_first_run));
@@ -183,7 +182,7 @@ public:
                                                    evt);
     qcl::check_cl_error(err, "Could not enqueue tree interpolation kernel.");
 
-    _is_first_run = !retain_results;
+    _is_first_run = false;
   }
 
   void evaluate_single_point(const math::vector3& position,
@@ -499,7 +498,7 @@ private:
 
   qcl::kernel_ptr _kernel;
 
-  mutable bool _is_first_run;
+  mutable bool _is_first_run = true;
 
 };
 

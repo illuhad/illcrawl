@@ -23,12 +23,11 @@
 #define SPECTRUM_HPP
 
 #include "animation.hpp"
-#include "partitioner.hpp"
+#include "work_partitioner.hpp"
+#include "integration.hpp"
 
 namespace illcrawl {
 namespace spectrum {
-
-
 
 class chandra_spectrum_quantity_generator
 {
@@ -37,36 +36,11 @@ public:
                    const unit_converter& converter,
                    const io::illustris_data_loader* data,
                    math::scalar redshift,
-                   math::scalar luminosity_distance)
-    : _ctx{ctx},
-      _converter{converter},
-      _data{data},
-      _z{redshift},
-      _luminosity_distance{luminosity_distance}
-  {
-    assert(ctx != nullptr);
-  }
+                   math::scalar luminosity_distance);
 
   std::shared_ptr<reconstruction_quantity::quantity> operator()(const camera& cam,
                                                                 std::size_t frame_id,
-                                                                std::size_t num_frames) const
-  {
-    math::scalar energy_bin_width = (chandra::arf::arf_max_energy() - chandra::arf::arf_min_energy())/
-                                    static_cast<math::scalar>(num_frames);
-    math::scalar current_energy = chandra::arf::arf_min_energy()
-                                + frame_id * energy_bin_width;
-
-    return std::make_shared<reconstruction_quantity::chandra_xray_spectral_count_rate>(
-          _data,
-          _converter,
-          _ctx,
-          _z,
-          _luminosity_distance,
-          current_energy,
-          chandra::arf::arf_bin_width()
-    );
-  }
-
+                                                                std::size_t num_frames) const;
 private:
   qcl::device_context_ptr _ctx;
   unit_converter _converter;
@@ -86,40 +60,11 @@ public:
                 math::scalar redshift,
                 math::scalar luminosity_distance,
                 math::scalar E_min,
-                math::scalar E_max)
-    :_ctx{ctx},
-     _converter{converter},
-     _data{data},
-     _z{redshift},
-     _luminosity_distance{luminosity_distance},
-     _min_energy{E_min},
-     _max_energy{E_max}
-  {
-    assert(ctx != nullptr);
-    assert(_max_energy >= _min_energy);
-  }
+                math::scalar E_max);
 
   std::shared_ptr<reconstruction_quantity::quantity> operator()(const camera& cam,
                                                                 std::size_t frame_id,
-                                                                std::size_t num_frames) const
-  {
-    math::scalar energy_bin_width = (_max_energy - _min_energy)/
-                                    static_cast<math::scalar>(num_frames);
-    math::scalar current_energy = _min_energy
-                                + frame_id * energy_bin_width;
-
-
-    return std::make_shared<reconstruction_quantity::xray_spectral_flux>(
-          _data,
-          _converter,
-          _ctx,
-          _z,
-          _luminosity_distance,
-          current_energy,
-          energy_bin_width
-    );
-  }
-
+                                                                std::size_t num_frames) const;
 private:
   qcl::device_context_ptr _ctx;
   unit_converter _converter;
@@ -132,60 +77,52 @@ private:
 
 };
 
-template<class Volumetric_reconstructor,
-         class Partitioner>
+
 class spectrum_generator
 {
 public:
   spectrum_generator(const qcl::device_context_ptr& ctx,
-                     const Partitioner& work_partitioner,
-                     const Volumetric_reconstructor& reconstructor)
-    :_ctx{ctx},
-     _work_partitioner{work_partitioner},
-     _reconstructor{reconstructor}
-  {
-
-  }
+                     reconstructing_data_crawler* reconstructor,
+                     const work_partitioner& partitioner);
 
   ~spectrum_generator(){}
 
-  template<class Integration_tolerance_type, class Quantity_creator>
+  template<class Quantity_creator>
   void operator()(const camera& cam,
-                  const Integration_tolerance_type& tol,
+                  const integration::tolerance& tol,
                   math::scalar integration_depth,
                   const Quantity_creator& spectral_quantity_generator,
                   std::size_t num_energies,
                   util::multi_array<device_scalar>& local_result)
   {
+    _reconstructor->purge_state();
 
     camera_movement::constant_state nonmoving_camera;
 
-    frame_rendering::multi_quantity_integrated_projection
-    <
-        Volumetric_reconstructor,
-        Integration_tolerance_type
-    > renderer{_ctx, integration_depth, tol, _reconstructor, spectral_quantity_generator};
+    frame_rendering::multi_quantity_integrated_projection renderer{
+      _ctx,
+      integration_depth,
+      tol,
+      _reconstructor,
+      spectral_quantity_generator
+    };
 
-    distributed_animation<Partitioner> animation{
-          _work_partitioner,
+    distributed_animation animation{
+          *_partitioner,
           renderer,
           nonmoving_camera,
           cam
     };
 
     animation(num_energies, local_result);
-    _work_partitioner = animation.get_partitioning();
+    _partitioner = std::move(animation.get_partitioning().clone());
   }
 
-  const Partitioner& get_partitioning() const
-  {
-    return _work_partitioner;
-  }
+  const work_partitioner& get_partitioning() const;
 private:
   qcl::device_context_ptr _ctx;
-  Partitioner _work_partitioner;
-
-  Volumetric_reconstructor _reconstructor;
+  std::unique_ptr<work_partitioner> _partitioner;
+  reconstructing_data_crawler* _reconstructor;
 };
 
 

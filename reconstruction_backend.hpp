@@ -18,34 +18,43 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#ifndef RECONSTRUCTION_BACKEND_HPP
+#define RECONSTRUCTION_BACKEND_HPP
 
-#ifndef PARTICLE_DISTRIBUTION_HPP
-#define PARTICLE_DISTRIBUTION_HPP
+#include <vector>
+#include <string>
 
-#include <array>
-#include <limits>
-
+#include "qcl.hpp"
+#include "cl_types.hpp"
+#include "particle_grid.hpp"
 #include "async_io.hpp"
-#include "math.hpp"
-
 
 namespace illcrawl {
 
-class particle_distribution
+
+class reconstruction_backend
 {
 public:
-  particle_distribution(const H5::DataSet& coordinates,
-                        const math::vector3& periodic_wraparound_size);
+  using particle = device_vector4;
 
-  const math::vector3& get_extent_center() const;
+  virtual std::vector<H5::DataSet> get_required_additional_datasets() const = 0;
 
-  const math::vector3& get_distribution_size() const;
+  virtual const cl::Buffer& retrieve_results() = 0;
 
-  const math::vector3& get_mean_particle_position() const;
-private:
-  math::vector3 _distribution_center;
-  math::vector3 _distribution_size;
-  math::vector3 _mean_particle_position;
+  virtual std::string get_backend_name() const = 0;
+
+  virtual void init_backend(std::size_t blocksize) = 0;
+
+  virtual void setup_particles(const std::vector<particle>& particles,
+                               const std::vector<cl::Buffer>& additional_dataset) = 0;
+
+  virtual void setup_evaluation_points(const cl::Buffer& evaluation_points,
+                                       std::size_t num_points) = 0;
+
+  virtual void run() = 0;
+
+  virtual ~reconstruction_backend(){}
+
 };
 
 }

@@ -23,11 +23,12 @@
 #include <vector>
 #include <boost/program_options.hpp>
 
-#include "partitioner.hpp"
-#include "illcrawl.hpp"
+#include "work_partitioner.hpp"
+#include "illcrawl_app.hpp"
 #include "python_plot.hpp"
 #include "profile.hpp"
-#include "volumetric_reconstruction.hpp"
+#include "reconstructing_data_crawler.hpp"
+#include "uniform_work_partitioner.hpp"
 
 int main(int argc, char** argv)
 {
@@ -61,20 +62,16 @@ int main(int argc, char** argv)
 
     const std::size_t blocksize = 40000000;
 
-    illcrawl::volumetric_nn8_reconstruction reconstructor{
+    illcrawl::reconstructing_data_crawler reconstructor{
+      app.create_reconstruction_backend(*reconstructed_quantity),
       app.get_environment().get_compute_device(),
       app.get_gas_distribution_volume_cutout(),
       app.get_data_loader().get_coordinates(),
-      app.get_data_loader().get_smoothing_length(),
       blocksize
     };
 
     // Create profile object
-    illcrawl::analysis::distributed_mc_radial_profile<
-        illcrawl::uniform_work_partitioner,
-        illcrawl::volumetric_nn8_reconstruction
-    >
-    profile{
+    illcrawl::analysis::distributed_mc_radial_profile profile{
       app.get_environment().get_compute_device(),
       illcrawl::uniform_work_partitioner{app.get_environment().get_communicator()},
       app.get_gas_distribution_center(),
@@ -117,5 +114,5 @@ int main(int argc, char** argv)
   {
     std::cout << "Fatal error occured." << std::endl;
   }
-};
+}
 

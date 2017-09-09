@@ -1,6 +1,6 @@
 
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Wall -Wextra -Wno-ignored-attributes -Wno-unused-parameter")
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -g -ffast-math -fno-finite-math-only -march=native -Wall -Wno-ignored-attributes -Wextra -Wno-unused-parameter")
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Wall -Wextra -Wno-ignored-attributes -Wno-unused-parameter -Wno-unused-function")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -g -ffast-math -fno-finite-math-only -march=native -Wall -Wno-ignored-attributes -Wextra -Wno-unused-parameter -Wno-unused-function")
 #set(CMAKE_CXX_COMPILER mpic++)
 set(MPI_C_COMPILER mpicc)
 set(MPI_CXX_COMPILER mpic++)
@@ -43,17 +43,41 @@ set(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} ${MPI_CXX_COMPILE_FLAGS})
 
 include_directories(${PROJECT_BINARY_DIR} ${OpenCL_INCLUDE_DIRS} ${HDF5_INCLUDE_DIRS} ${Boost_INCLUDE_DIR} ${MPI_C_INCLUDE_PATH})
 
-add_executable(illcrawl_render illcrawl.cpp chandra.cpp gaunt_factor.cpp)
+add_library(illcrawl_core STATIC
+  illcrawl_app.cpp
+  animation.cpp
+  camera.cpp
+  environment.cpp
+  particle_distribution.cpp
+  particle_grid.cpp
+  chandra.cpp
+  gaunt_factor.cpp
+  integration.cpp
+  volumetric_reconstruction_backend_nn8.cpp
+  volumetric_reconstruction_backend_tree.cpp
+  volumetric_slice.cpp
+  volumetric_tomography.cpp
+  volumetric_integration.cpp
+  reconstructing_data_crawler.cpp
+  uniform_work_partitioner.cpp
+  random.cpp
+  profile.cpp
+  spectrum.cpp
+  tree_ostream.cpp)
+
+add_executable(illcrawl_render illcrawl_render.cpp)
 add_executable(illcrawl_extract_fits_slice illcrawl_extract_fits_slice.cpp)
 add_executable(illcrawl_filter_snapshot illcrawl_filter_snapshot.cpp)
-add_executable(illcrawl_cluster_analysis illcrawl_cluster_analysis.cpp chandra.cpp gaunt_factor.cpp)
+add_executable(illcrawl_cluster_analysis illcrawl_cluster_analysis.cpp)
 add_executable(illcrawl_sum_pixels illcrawl_sum_pixels.cpp)
 
-target_link_libraries (illcrawl_render ${MPI_CXX_LINK_FLAGS} ${MPI_CXX_LIBRARIES} ${OpenCL_LIBRARIES} ${HDF5_CXX_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT}  ${Boost_MPI_LIBRARY} ${Boost_PROGRAM_OPTIONS_LIBRARY} ${Boost_SERIALIZATION_LIBRARY} cfitsio)
-target_link_libraries (illcrawl_cluster_analysis ${MPI_CXX_LINK_FLAGS} ${MPI_CXX_LIBRARIES} ${OpenCL_LIBRARIES} ${HDF5_CXX_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT}  ${Boost_MPI_LIBRARY} ${Boost_PROGRAM_OPTIONS_LIBRARY} ${Boost_SERIALIZATION_LIBRARY} cfitsio)
-target_link_libraries (illcrawl_extract_fits_slice ${OpenCL_LIBRARIES} cfitsio)
-target_link_libraries (illcrawl_filter_snapshot ${MPI_CXX_LINK_FLAGS} ${MPI_CXX_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT} ${HDF5_CXX_LIBRARIES} ${Boost_PROGRAM_OPTIONS_LIBRARY})
-target_link_libraries (illcrawl_sum_pixels ${OpenCL_LIBRARIES} cfitsio)
+set(LIBS illcrawl_core ${MPI_CXX_LINK_FLAGS} ${MPI_CXX_LIBRARIES} ${OpenCL_LIBRARIES} ${HDF5_CXX_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT}  ${Boost_MPI_LIBRARY} ${Boost_PROGRAM_OPTIONS_LIBRARY} ${Boost_SERIALIZATION_LIBRARY} cfitsio)
+
+target_link_libraries (illcrawl_render ${LIBS})
+target_link_libraries (illcrawl_cluster_analysis ${LIBS})
+target_link_libraries (illcrawl_extract_fits_slice ${LIBS})
+target_link_libraries (illcrawl_filter_snapshot ${LIBS})
+target_link_libraries (illcrawl_sum_pixels ${LIBS})
 # Copy CL sources
 add_custom_command(TARGET illcrawl_render POST_BUILD
                   COMMAND ${CMAKE_COMMAND} -E copy

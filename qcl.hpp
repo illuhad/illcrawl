@@ -189,6 +189,7 @@ private:
   unsigned _num_arguments;
 };
 
+
 /// Represents the OpenCL context of a device. This class contains everything
 /// that is needed to execute OpenCL commands on a device. It stores one cl::Context,
 /// at least one cl::CommandQueue and a number of kernels that have been compiled for the device.
@@ -465,6 +466,34 @@ public:
     check_cl_error(err, "Could not create buffer object!");
   }
 
+  /// Create a read-write OpenCL buffer object. For CPU devices, it will
+  /// be attempted to construct a zero-copy buffer. In this case
+  /// \c initial_data must remain valid!
+  /// \param out The created buffer
+  /// \param size The number of elements of the buffer
+  /// \param initial_data The initial_data buffer.
+  template<class T>
+  void create_buffer(cl::Buffer& out,
+                     std::size_t size,
+                     T* initial_data = nullptr) const
+  {
+    this->create_buffer<T>(out, CL_MEM_READ_WRITE, size, initial_data);
+  }
+
+  /// Create a read-write OpenCL buffer object. For CPU devices, it will
+  /// be attempted to construct a zero-copy buffer. In this case
+  /// \c initial_data must remain valid!
+  /// \param out The created buffer
+  /// \param size The number of elements of the buffer
+  /// \param initial_data The initial_data buffer.
+  template<class T>
+  buffer_ptr create_buffer(
+                     std::size_t size,
+                     T* initial_data = nullptr) const
+  {
+    return create_buffer<T>(CL_MEM_READ_WRITE, size, initial_data);
+  }
+
   /// Creates a buffer that is read-only for the compute device.
   /// \return A pointer to the created buffer object
   /// \param size The number of elements to allocate
@@ -729,6 +758,42 @@ public:
     while(get_num_command_queues() < num_queues)
       add_command_queue();
   }
+
+  cl_int enqueue_ndrange_kernel(const kernel_ptr& kernel,
+                                const cl::NDRange& minimum_num_work_items,
+                                const cl::NDRange& num_local_items,
+                                cl::Event* event = nullptr,
+                                const cl::NDRange& offset = cl::NullRange,
+                                const std::vector<cl::Event>* dependencies = nullptr,
+                                command_queue_id queue = 0)
+  {
+    assert(queue < get_num_command_queues());
+    assert(minimum_num_work_items.dimensions() == num_local_items.dimensions());
+
+    cl::NDRange global = minimum_num_work_items;
+    for(std::size_t i = 0; i < minimum_num_work_items.dimensions(); ++i)
+    {
+      std::size_t work_items = minimum_num_work_items.get()[i];
+      std::size_t local_items = num_local_items.get()[i];
+
+      std::size_t multiple = (work_items/local_items)*local_items;
+      if(multiple != work_items)
+        multiple += local_items;
+
+      assert(multiple % local_items == 0 && multiple >= work_items);
+      global.get()[i] = multiple;
+    }
+
+    cl_int err = get_command_queue(queue).enqueueNDRangeKernel(*kernel,
+                                                               offset,
+                                                               global,
+                                                               num_local_items,
+                                                               dependencies,
+                                                               event);
+    return err;
+  }
+
+
 
 private:
 
