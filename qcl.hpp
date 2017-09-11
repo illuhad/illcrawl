@@ -106,7 +106,7 @@ private:
 /// \throws \c std::rutime_error
 /// \param err The error code that shall be checked
 /// \param msg The error message
-static
+inline
 void check_cl_error(cl_int err, const std::string& msg)
 {
   if(err != CL_SUCCESS)
@@ -1246,7 +1246,7 @@ public:
   }
 #endif
   
-  inline static
+  static
   void get_devices(const cl::Platform& platform, 
                   std::vector<cl::Device>& result,
                   cl_device_type type = CL_DEVICE_TYPE_ALL)
@@ -1259,7 +1259,7 @@ public:
       check_cl_error(err, "Could not obtain device list!");
   }
   
-  inline
+
   void get_devices(std::size_t platform_index, 
                   std::vector<cl::Device>& result,
                   cl_device_type type = CL_DEVICE_TYPE_ALL) const
@@ -1268,32 +1268,32 @@ public:
     get_devices(_platforms[platform_index], result, type);
   }
   
-  inline static
+  static
   void get_all_devices(const cl::Platform& platform,
                        std::vector<cl::Device>& result)
   { get_devices(platform, result); }
   
-  inline
+
   void get_all_devices(std::size_t platform_index,
                        std::vector<cl::Device>& result) const
   { get_all_devices(_platforms[platform_index], result); }
   
-  inline static
+  static
   void get_cpu_devices(const cl::Platform& platform,
                        std::vector<cl::Device>& result)
   { get_devices(platform, result, CL_DEVICE_TYPE_CPU); }
   
-  inline
+
   void get_cpu_devices(std::size_t platform_index,
                        std::vector<cl::Device>& result) const
   { get_devices(platform_index, result, CL_DEVICE_TYPE_CPU); }
   
-  inline static
+  static
   void get_gpu_devices(const cl::Platform& platform,
                        std::vector<cl::Device>& result)
   { get_devices(platform, result, CL_DEVICE_TYPE_GPU); }
   
-  inline
+
   void get_gpu_devices(std::size_t platform_index,
                        std::vector<cl::Device>& result) const
   { get_devices(platform_index, result, CL_DEVICE_TYPE_GPU); }

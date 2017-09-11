@@ -324,17 +324,15 @@ int main(int argc, char** argv)
 
     illcrawl::integration::tolerance tol{cmd_options.absolute_tolerance, cmd_options.relative_tolerance};
 
-    if(cmd_options.absolute_tolerance <= 0.0 || cmd_options.relative_tolerance <= 0.0)
+    if(cmd_options.absolute_tolerance <= 0.0 && cmd_options.relative_tolerance <= 0.0)
       throw std::invalid_argument{"Either absolute integration tolerance or relative tolerance has to be > 0"};
-
-    const std::size_t blocksize = 40000000;
 
     illcrawl::reconstructing_data_crawler reconstructor{
       app.create_reconstruction_backend(*quantity),
       app.get_environment().get_compute_device(),
       app.get_gas_distribution_volume_cutout(),
       app.get_data_loader().get_coordinates(),
-      blocksize
+      app.get_data_crawling_blocksize()
     };
 
     run(app, cmd_options, tol, reconstructor, quantity, quantity_parser);

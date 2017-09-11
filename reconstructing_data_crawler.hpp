@@ -56,17 +56,17 @@ public:
                 const math::vector3& volume_extent,
                 const math::vector3& periodic_wraparound);
 
-  inline math::vector3 get_extent(math::scalar border_region_size = 0.0) const;
+  math::vector3 get_extent(math::scalar border_region_size = 0.0) const;
 
-  inline math::scalar get_volume() const;
+  math::scalar get_volume() const;
 
-  inline bool contains_point(const math::vector3& point,
-                             math::scalar additional_tolerance = 0.0) const;
+  bool contains_point(const math::vector3& point,
+                      math::scalar additional_tolerance = 0.0) const;
 
-  inline math::vector3 get_bounding_box_min_corner() const;
-  inline math::vector3 get_bounding_box_max_corner() const;
+  math::vector3 get_bounding_box_min_corner() const;
+  math::vector3 get_bounding_box_max_corner() const;
 
-  inline math::vector3 get_periodic_wraparound_size() const;
+  math::vector3 get_periodic_wraparound_size() const;
 
 private:
   math::vector3 _center;

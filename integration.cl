@@ -86,7 +86,7 @@ void rkf_advance(scalar* integration_state,
   {
     scalar error = fabs(delta5 - delta4);
 
-    scalar scaled_relative_tolerance = fabs(*integration_state / (*current_position) * tolerance);
+    scalar scaled_relative_tolerance = fabs(*integration_state / (*current_position) * relative_tolerance);
 
     scalar overall_tolerance = fmax(absolute_tolerance, scaled_relative_tolerance);
 

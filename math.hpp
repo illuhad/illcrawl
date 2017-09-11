@@ -41,7 +41,7 @@
 namespace illcrawl {
 namespace math {
 
-inline static
+inline
 std::size_t make_multiple_of(std::size_t n, std::size_t value)
 {
   std::size_t result = (value / n) * n;
@@ -91,7 +91,7 @@ vector_n<Dim> normalize(const vector_n<Dim>& v)
   return result;
 }
 
-inline static
+inline
 vector3 cross(const vector3& a, const vector3& b)
 {
   return {{a[1] * b[2] - a[2] * b[1],
@@ -105,7 +105,7 @@ inline scalar square(scalar x)
 }
 
 
-static
+inline
 void matrix_create_rotation_matrix(matrix3x3* m, vector3 axis, scalar alpha)
 {
   scalar a1 = VECTOR3_X(axis);
@@ -137,7 +137,7 @@ void matrix_create_rotation_matrix(matrix3x3* m, vector3 axis, scalar alpha)
   VECTOR3_Z(m->row2) = a3*a3*flipped_cos_alpha + cos_alpha;
 }
 
-inline static
+inline
 vector3 matrix_vector_mult(const matrix3x3& m, const vector3& v)
 {
   vector3 result;
@@ -147,7 +147,7 @@ vector3 matrix_vector_mult(const matrix3x3& m, const vector3& v)
   return result;
 }
 
-inline static
+inline
 matrix3x3 matrix_matrix_mult(const matrix3x3& A, const matrix3x3& B)
 {
   matrix3x3 result;

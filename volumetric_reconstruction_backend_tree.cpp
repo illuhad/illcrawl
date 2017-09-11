@@ -70,7 +70,8 @@ tree::setup_evaluation_points(const cl::Buffer& evaluation_points,
   if(num_points > _num_evaluation_points)
     _ctx->create_buffer<device_scalar>(this->_result, num_points);
 
-  this->_tree->purge_state();
+  if(_tree != nullptr)
+    this->_tree->purge_state();
 
   this->_evaluation_points = evaluation_points;
   this->_num_evaluation_points = num_points;

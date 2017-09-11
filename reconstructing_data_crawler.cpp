@@ -20,6 +20,7 @@
 
 #include "reconstructing_data_crawler.hpp"
 
+
 namespace illcrawl {
 
 /*************** Implementation of volume_cutout ********************/
@@ -32,7 +33,7 @@ volume_cutout::volume_cutout(const math::vector3& volume_center,
     _periodic_wraparound_size(periodic_wraparound)
 {}
 
-inline math::vector3 volume_cutout::get_extent(math::scalar border_region_size) const
+math::vector3 volume_cutout::get_extent(math::scalar border_region_size) const
 {
   math::vector3 result = _extent;
   for(std::size_t i = 0; i < 3; ++i)
@@ -40,13 +41,13 @@ inline math::vector3 volume_cutout::get_extent(math::scalar border_region_size) 
   return result;
 }
 
-inline math::scalar volume_cutout::get_volume() const
+math::scalar volume_cutout::get_volume() const
 {
   return _extent[0] * _extent[1] * _extent[2];
 }
 
-inline bool volume_cutout::contains_point(const math::vector3& point,
-                                          math::scalar additional_tolerance) const
+bool volume_cutout::contains_point(const math::vector3& point,
+                                   math::scalar additional_tolerance) const
 {
   for(std::size_t i = 0; i < 3; ++i)
   {
@@ -58,17 +59,17 @@ inline bool volume_cutout::contains_point(const math::vector3& point,
   return true;
 }
 
-inline math::vector3 volume_cutout::get_bounding_box_min_corner() const
+math::vector3 volume_cutout::get_bounding_box_min_corner() const
 {
   return _center - 0.5 * _extent;
 }
 
-inline math::vector3 volume_cutout::get_bounding_box_max_corner() const
+math::vector3 volume_cutout::get_bounding_box_max_corner() const
 {
   return _center + 0.5 * _extent;
 }
 
-inline math::vector3 volume_cutout::get_periodic_wraparound_size() const
+math::vector3 volume_cutout::get_periodic_wraparound_size() const
 {
   return _periodic_wraparound_size;
 }
@@ -235,6 +236,7 @@ void reconstructing_data_crawler::run(
       assert(additional_required_data.size() == this->_additional_data_buffers.size());
       for(std::size_t i = 0; i < additional_required_data.size(); ++i)
       {
+        assert(additional_required_data[i].size() == particles.size());
         _ctx->memcpy_h2d<device_scalar>(_additional_data_buffers[i],
                                         additional_required_data[i].data(),
                                         additional_required_data[i].size());

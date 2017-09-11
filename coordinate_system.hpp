@@ -22,7 +22,7 @@ namespace coordinate_system{
 /// layer around the box to increase its size.
 /// \param coordinates the coordinates of the point to process.
 template<std::size_t N>
-static void correct_periodicity(const math::vector_n<N>& render_volume_bounding_box_min,
+inline void correct_periodicity(const math::vector_n<N>& render_volume_bounding_box_min,
                                 const math::vector_n<N>& render_volume_bounding_box_max,
                                 const math::vector_n<N>& periodic_wraparound_size,
                                 math::scalar additional_tolerance,
@@ -60,7 +60,7 @@ static void correct_periodicity(const math::vector_n<N>& render_volume_bounding_
 /// layer around the box to increase its size.
 /// \param coordinates the coordinates of the point to process.
 template<std::size_t N>
-static void correct_periodicity(const util::grid_coordinate_translator<N>& grid_translator,
+inline void correct_periodicity(const util::grid_coordinate_translator<N>& grid_translator,
                                 const math::vector_n<N>& periodic_wraparound_size,
                                 math::scalar additional_tolerance,
                                 math::vector_n<N>& coordinates)
@@ -81,7 +81,7 @@ static void correct_periodicity(const util::grid_coordinate_translator<N>& grid_
 /// of a period for each dimension
 /// \param pivot The pivot point
 /// \param coordinates the coordinates of the point to process.
-static void correct_periodicity(const math::vector3& periodic_wraparound_size,
+inline void correct_periodicity(const math::vector3& periodic_wraparound_size,
                                 const math::vector3& pivot,
                                 math::vector3& coordinates)
 {

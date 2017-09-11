@@ -66,8 +66,8 @@ void nn8::run()
   assert(_grid != nullptr);
   assert(_num_evaluation_points > 0);
 
-  this->_is_first_run = false;
   this->launch_reconstruction();
+  this->_is_first_run = false;
 }
 
 const cl::Buffer& nn8::retrieve_results()

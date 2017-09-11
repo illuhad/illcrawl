@@ -60,14 +60,12 @@ int main(int argc, char** argv)
     std::unique_ptr<illcrawl::reconstruction_quantity::quantity> reconstructed_quantity =
         quantity_parser.create_quantity(app);
 
-    const std::size_t blocksize = 40000000;
-
     illcrawl::reconstructing_data_crawler reconstructor{
       app.create_reconstruction_backend(*reconstructed_quantity),
       app.get_environment().get_compute_device(),
       app.get_gas_distribution_volume_cutout(),
       app.get_data_loader().get_coordinates(),
-      blocksize
+      app.get_data_crawling_blocksize()
     };
 
     // Create profile object

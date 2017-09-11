@@ -59,7 +59,10 @@ illcrawl_app::illcrawl_app(int& argc,
        boost::program_options::value<math::scalar>(&_tree_opening_angle)->default_value(_tree_opening_angle),
        "The opening angle of the tree reconstructor.")
       ("reconstructor.dm", boost::program_options::value<std::string>(&_dm_reconstructor)->default_value(_dm_reconstructor),
-       "The reconstructor used for quantities that rely on Dark Matter particles.");
+       "The reconstructor used for quantities that rely on Dark Matter particles.")
+      ("data_crawler.blocksize",
+       boost::program_options::value<std::size_t>(&_data_crawling_blocksize)->default_value(_data_crawling_blocksize),
+       "The number of particles (or cells) that are read and processed in one block.");
 
 
   _options.add(additional_options);
@@ -228,6 +231,9 @@ illcrawl_app::save_settings_to_fits(util::fits_header* header) const
   header->add_entry("renderer.dm_reconstructor",
                     this->create_dm_reconstruction_backend()->get_backend_name());
   header->add_entry("renderer.partitioner","uniform","The parallel work partitioning strategy");
+  header->add_entry("data_crawler.blocksize",
+                    static_cast<unsigned long long>(_data_crawling_blocksize),
+                    "The number of particles/cells processed in one block");
   header->add_entry("environment.num_mpi_processes",
                     _env.get_communicator().size(),
                     "Number of parallel MPI processes");
@@ -393,6 +399,13 @@ illcrawl_app::create_reconstruction_backend(const reconstruction_quantity::quant
     return create_voronoi_reconstruction_backend();
   else
     return create_dm_reconstruction_backend();
+}
+
+
+std::size_t
+illcrawl_app::get_data_crawling_blocksize() const
+{
+  return this->_data_crawling_blocksize;
 }
 
 /*********** Implementation of quantity_command_line_parser ************/

@@ -84,15 +84,17 @@ public:
                                            const camera& camera_configuration) const;
 
   std::unique_ptr<reconstruction_backend>
+  create_reconstruction_backend(const reconstruction_quantity::quantity& q) const;
+
+  std::size_t get_data_crawling_blocksize() const;
+
+private:
+  std::unique_ptr<reconstruction_backend>
   create_voronoi_reconstruction_backend() const;
 
   std::unique_ptr<reconstruction_backend>
   create_dm_reconstruction_backend() const;
 
-  std::unique_ptr<reconstruction_backend>
-  create_reconstruction_backend(const reconstruction_quantity::quantity& q) const;
-
-private:
   void save_length_scalar_to_fits_header(util::fits_header* header,
                                          const std::string& parent_key,
                                          const std::string& key,
@@ -140,6 +142,7 @@ private:
   std::string _dm_reconstructor = "nn8";
   math::scalar _tree_opening_angle = 0.4;
 
+  std::size_t _data_crawling_blocksize = 40000000;
 };
 
 class quantity_command_line_parser

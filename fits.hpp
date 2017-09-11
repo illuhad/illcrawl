@@ -128,7 +128,7 @@ struct fits_datatype<char [N]>
   { return fits_datatype<char*>::datatype(); }
 };
 
-static std::string fits_error(int error_code)
+inline std::string fits_error(int error_code)
 {
   char descr[30];
   fits_get_errstatus(error_code, descr);
