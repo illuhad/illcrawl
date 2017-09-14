@@ -68,7 +68,7 @@ public:
 
   math::scalar get_recommended_integration_depth() const;
 
-  const io::illustris_gas_data_loader& get_data_loader() const;
+  io::illustris_data_loader& get_data_loader() const;
   const unit_converter& get_unit_converter() const;
 
   math::scalar get_redshift() const;
@@ -90,10 +90,10 @@ public:
 
 private:
   std::unique_ptr<reconstruction_backend>
-  create_voronoi_reconstruction_backend() const;
+  create_voronoi_reconstruction_backend(const reconstruction_quantity::quantity& q) const;
 
   std::unique_ptr<reconstruction_backend>
-  create_dm_reconstruction_backend() const;
+  create_dm_reconstruction_backend(const reconstruction_quantity::quantity& q) const;
 
   void save_length_scalar_to_fits_header(util::fits_header* header,
                                          const std::string& parent_key,
@@ -123,7 +123,7 @@ private:
   const math::vector3 _periodic_wraparound;
 
   std::unique_ptr<particle_distribution> _particle_distribution;
-  std::unique_ptr<io::illustris_gas_data_loader> _data_loader;
+  std::unique_ptr<io::illustris_data_loader> _data_loader;
   std::unique_ptr<unit_converter> _units;
 
   math::scalar _a = 1/1.2;
@@ -139,7 +139,7 @@ private:
 
 
   std::string _voronoi_reconstructor = "nn8";
-  std::string _dm_reconstructor = "nn8";
+  std::string _dm_reconstructor = "brute_force";
   math::scalar _tree_opening_angle = 0.4;
 
   std::size_t _data_crawling_blocksize = 40000000;
@@ -198,6 +198,8 @@ private:
 
   math::scalar _luminosity_weighted_temp_min_energy = 0.1;
   math::scalar _luminosity_weighted_temp_max_energy = 10.0;
+
+  math::scalar _dm_particle_mass = 0.000440896524361;
 };
 
 }

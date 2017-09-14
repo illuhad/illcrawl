@@ -48,16 +48,24 @@ environment::environment(int& argc, char**& argv)
   }
 
   _global_ctx->global_register_source_file("projective_smoothing_reconstruction.cl",
-  {"image_tile_based_reconstruction2D"});
+                                           {"image_tile_based_reconstruction2D"});
   _global_ctx->global_register_source_file("volumetric_nn8_reconstruction.cl",
-  {"volumetric_nn8_reconstruction",
-   "finalize_volumetric_nn8_reconstruction"});
+                                           {
+                                             "volumetric_nn8_reconstruction",
+                                             "finalize_volumetric_nn8_reconstruction"
+                                           });
   _global_ctx->global_register_source_file("interpolation_tree.cl",
-  {"tree_interpolation"});
+                                           {
+                                             "tree_interpolation"
+                                           });
+  _global_ctx->global_register_source_file("dm_reconstruction_backend_brute_force.cl",
+                                           {
+                                             "dm_reconstruction_brute_force_smoothing"
+                                           });
 
   _global_ctx->global_register_source_file("quantities.cl",
                                            // Kernels inside quantities.cl
-  {
+                                           {
                                              "luminosity_weighted_temperature",
                                              "xray_flux",
                                              "xray_photon_flux",
@@ -66,16 +74,17 @@ environment::environment(int& argc, char**& argv)
                                              "mean_temperature",
                                              "chandra_xray_total_count_rate",
                                              "chandra_xray_spectral_count_rate",
-                                             "unprocessed_quantity"
+                                             "unprocessed_quantity",
+                                             "constant_quantity"
                                            });
   _global_ctx->global_register_source_file("integration.cl",
-  {
+                                           {
                                              "runge_kutta_fehlberg",
                                              "construct_evaluation_points_over_camera_plane",
                                              "gather_integrand_evaluations"
                                            });
   _global_ctx->global_register_source_file("particle_grid.cl",
-  {
+                                           {
                                              "grid3d_generate_sort_keys",
                                              "grid3d_determine_cells_begin",
                                              "grid3d_determine_cells_end"

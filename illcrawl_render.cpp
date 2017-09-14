@@ -327,11 +327,19 @@ int main(int argc, char** argv)
     if(cmd_options.absolute_tolerance <= 0.0 && cmd_options.relative_tolerance <= 0.0)
       throw std::invalid_argument{"Either absolute integration tolerance or relative tolerance has to be > 0"};
 
+    std::unique_ptr<illcrawl::reconstruction_backend> reconstruction_engine =
+        app.create_reconstruction_backend(*quantity);
+
+    app.output_stream() << "Using reconstruction engine: "
+                        << reconstruction_engine->get_backend_name()
+                        << std::endl;
+
+    std::string coordinate_id = illcrawl::io::illustris_data_loader::get_coordinate_identifier();
     illcrawl::reconstructing_data_crawler reconstructor{
-      app.create_reconstruction_backend(*quantity),
+      std::move(reconstruction_engine),
       app.get_environment().get_compute_device(),
       app.get_gas_distribution_volume_cutout(),
-      app.get_data_loader().get_coordinates(),
+      app.get_data_loader().get_dataset(coordinate_id),
       app.get_data_crawling_blocksize()
     };
 

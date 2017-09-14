@@ -34,7 +34,7 @@ class chandra_spectrum_quantity_generator
 public:
   chandra_spectrum_quantity_generator(const qcl::device_context_ptr& ctx,
                    const unit_converter& converter,
-                   const io::illustris_data_loader* data,
+                   io::illustris_data_loader* data,
                    math::scalar redshift,
                    math::scalar luminosity_distance);
 
@@ -44,7 +44,7 @@ public:
 private:
   qcl::device_context_ptr _ctx;
   unit_converter _converter;
-  const io::illustris_data_loader* _data;
+  io::illustris_data_loader* _data;
   math::scalar _z;
   math::scalar _luminosity_distance;
 
@@ -56,7 +56,7 @@ class xray_spectrum_quantity_generator
 public:
   xray_spectrum_quantity_generator(const qcl::device_context_ptr& ctx,
                 const unit_converter& converter,
-                const io::illustris_data_loader* data,
+                io::illustris_data_loader* data,
                 math::scalar redshift,
                 math::scalar luminosity_distance,
                 math::scalar E_min,
@@ -68,7 +68,7 @@ public:
 private:
   qcl::device_context_ptr _ctx;
   unit_converter _converter;
-  const io::illustris_data_loader* _data;
+  io::illustris_data_loader* _data;
   math::scalar _z;
   math::scalar _luminosity_distance;
 

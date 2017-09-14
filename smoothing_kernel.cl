@@ -65,6 +65,28 @@ scalar line_of_sight_integral2(scalar R,
   return 2.f * norm * integral;
 }
 
+/// See Monaghan (1992)
+scalar cubic_spline3d(scalar r,
+                      scalar h)
+{
+  scalar q = r/h;
+
+  scalar norm = 1.f/(M_PI_F*h*h*h);
+
+  scalar q2 = q*q;
+  scalar q3 = q*q2;
+  scalar r0 = 1.f - 3.f/2.f*q2 + 3.f/4.f*q3;
+
+  scalar two_minus_q = 2.f-q;
+  scalar r1 = 1.f/4.f*two_minus_q*two_minus_q*two_minus_q;
+
+  if(q <= 1)
+    return r0;
+
+  return fmax(r1, 0.0f);
+}
+
+
 scalar get_weight(vector2 coord,
                   scalar smoothing_length,
                   vector2 px_center,

@@ -249,6 +249,8 @@ void reconstructing_data_crawler::run(
     });
     this->_is_first_run = false;
   }
+  // Make sure all device operations have completed.
+  _ctx->get_command_queue().finish();
 }
 
 void reconstructing_data_crawler::run(

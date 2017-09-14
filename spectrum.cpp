@@ -30,7 +30,7 @@ namespace spectrum {
 chandra_spectrum_quantity_generator::chandra_spectrum_quantity_generator(
                                     const qcl::device_context_ptr& ctx,
                                     const unit_converter& converter,
-                                    const io::illustris_data_loader* data,
+                                    io::illustris_data_loader* data,
                                     math::scalar redshift,
                                     math::scalar luminosity_distance)
   : _ctx{ctx},
@@ -69,7 +69,7 @@ chandra_spectrum_quantity_generator::operator()(const camera& cam,
 xray_spectrum_quantity_generator::xray_spectrum_quantity_generator(
     const qcl::device_context_ptr& ctx,
     const unit_converter& converter,
-    const io::illustris_data_loader* data,
+    io::illustris_data_loader* data,
     math::scalar redshift,
     math::scalar luminosity_distance,
     math::scalar E_min,

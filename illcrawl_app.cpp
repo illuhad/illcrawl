@@ -24,6 +24,7 @@
 #include "illcrawl_app.hpp"
 #include "volumetric_reconstruction_backend_nn8.hpp"
 #include "volumetric_reconstruction_backend_tree.hpp"
+#include "dm_reconstruction_backend_brute_force.hpp"
 
 namespace illcrawl {
 
@@ -58,8 +59,10 @@ illcrawl_app::illcrawl_app(int& argc,
       ("reconstructor.voronoi.tree.opening_angle",
        boost::program_options::value<math::scalar>(&_tree_opening_angle)->default_value(_tree_opening_angle),
        "The opening angle of the tree reconstructor.")
-      ("reconstructor.dm", boost::program_options::value<std::string>(&_dm_reconstructor)->default_value(_dm_reconstructor),
-       "The reconstructor used for quantities that rely on Dark Matter particles.")
+      ("reconstructor.dm",
+       boost::program_options::value<std::string>(&_dm_reconstructor)->default_value(_dm_reconstructor),
+       "The reconstructor used for quantities that rely on Dark Matter particles. Supported reconstructors:\n"
+       " * brute_force")
       ("data_crawler.blocksize",
        boost::program_options::value<std::size_t>(&_data_crawling_blocksize)->default_value(_data_crawling_blocksize),
        "The number of particles (or cells) that are read and processed in one block.");
@@ -107,26 +110,27 @@ illcrawl_app::parse_command_line()
 
   boost::program_options::notify(vm);
 
-
-
   _a = 1.0 / (1. + _z);
   _units = std::unique_ptr<unit_converter>{new unit_converter{_a, _h}};
-  _data_loader = std::unique_ptr<io::illustris_gas_data_loader>{
-      new io::illustris_gas_data_loader{_hdf5_filename}
+  _data_loader = std::unique_ptr<io::illustris_data_loader>{
+      new io::illustris_data_loader{_hdf5_filename, 0}
   };
 
   _particle_distribution = std::unique_ptr<particle_distribution>{
-      new particle_distribution{_data_loader->get_coordinates(),_periodic_wraparound}
+      new particle_distribution{
+        _data_loader->get_dataset(io::illustris_data_loader::get_coordinate_identifier()),
+        _periodic_wraparound
+      }
   };
 
   _distribution_radius =
       0.5 * std::sqrt(math::dot(get_gas_distribution_size(), get_gas_distribution_size()));
 
-  _master_ostream << "Distribution center: " << get_gas_distribution_center()[0] << ", "
+  _master_ostream << "Gas distribution center: " << get_gas_distribution_center()[0] << ", "
                   << get_gas_distribution_center()[1] << ", "
                   << get_gas_distribution_center()[2]
                   << std::endl;
-  _master_ostream << "Distribution size: "
+  _master_ostream << "Gas distribution size: "
                   << get_gas_distribution_size()[0] << "x"
                   << get_gas_distribution_size()[1] << "x"
                   << get_gas_distribution_size()[2] << " (ckpc/h)^3" << std::endl;
@@ -191,7 +195,7 @@ illcrawl_app::get_recommended_integration_depth() const
   return 2.0 * _distribution_radius;
 }
 
-const io::illustris_gas_data_loader&
+io::illustris_data_loader&
 illcrawl_app::get_data_loader() const
 {
   return *_data_loader.get();
@@ -227,9 +231,9 @@ illcrawl_app::save_settings_to_fits(util::fits_header* header) const
 
   header->add_entry("renderer","Illcrawl suite");
   header->add_entry("renderer.voronoi_reconstructor",
-                    this->create_voronoi_reconstruction_backend()->get_backend_name());
+                    this->_voronoi_reconstructor);
   header->add_entry("renderer.dm_reconstructor",
-                    this->create_dm_reconstruction_backend()->get_backend_name());
+                    this->_dm_reconstructor);
   header->add_entry("renderer.partitioner","uniform","The parallel work partitioning strategy");
   header->add_entry("data_crawler.blocksize",
                     static_cast<unsigned long long>(_data_crawling_blocksize),
@@ -363,7 +367,8 @@ illcrawl_app::save_comoving_vector3_to_fits_header(util::fits_header* header,
 }
 
 std::unique_ptr<reconstruction_backend>
-illcrawl_app::create_voronoi_reconstruction_backend() const
+illcrawl_app::create_voronoi_reconstruction_backend(
+    const reconstruction_quantity::quantity& q) const
 {
   if(this->_voronoi_reconstructor == "nn8")
   {
@@ -381,14 +386,32 @@ illcrawl_app::create_voronoi_reconstruction_backend() const
     };
   }
   else
-    throw std::invalid_argument{"Unknown reconstructor: "+_voronoi_reconstructor};
+    throw std::invalid_argument{"Unknown voronoi reconstructor: "+_voronoi_reconstructor};
 }
 
 std::unique_ptr<reconstruction_backend>
-illcrawl_app::create_dm_reconstruction_backend() const
+illcrawl_app::create_dm_reconstruction_backend(
+    const reconstruction_quantity::quantity& q) const
 {
-  // ToDo change this to include actual DM reconstructors
-  return create_voronoi_reconstruction_backend();
+  assert(!q.is_quantity_baryonic());
+
+  if(_data_loader->get_current_group_name() != "PartType1")
+    _data_loader->select_group(1);
+
+  std::string dm_smoothing_length_id =
+      io::illustris_data_loader::get_dm_smoothing_length_identifier();
+
+  if(this->_dm_reconstructor == "brute_force")
+  {
+    return std::unique_ptr<reconstruction_backend>{
+      new reconstruction_backends::dm::brute_force{
+        _env.get_compute_device(),
+        _data_loader->get_dataset(dm_smoothing_length_id)
+      }
+    };
+  }
+  else
+    throw std::invalid_argument{"Unknown dark matter reconstructor: "+_dm_reconstructor};
 }
 
 
@@ -396,9 +419,9 @@ std::unique_ptr<reconstruction_backend>
 illcrawl_app::create_reconstruction_backend(const reconstruction_quantity::quantity& q) const
 {
   if(q.is_quantity_baryonic())
-    return create_voronoi_reconstruction_backend();
+    return create_voronoi_reconstruction_backend(q);
   else
-    return create_dm_reconstruction_backend();
+    return create_dm_reconstruction_backend(q);
 }
 
 
@@ -411,8 +434,6 @@ illcrawl_app::get_data_crawling_blocksize() const
 /*********** Implementation of quantity_command_line_parser ************/
 
 
-
-
 void
 quantity_command_line_parser::register_options(boost::program_options::options_description& options)
 {
@@ -420,16 +441,17 @@ quantity_command_line_parser::register_options(boost::program_options::options_d
       ("quantity,q",
        boost::program_options::value<std::string>(&_quantity_selection)->default_value(_quantity_selection),
        "The quantity which shall be used for reconstruction. Allowed values: \n"
-       "chandra_count_rate: count rate as seen by chandra, taking into account chandra's ACIS-I instrumental response [counts/s]\n"
-       "xray_flux: The emitted xray flux [keV/s/m^2]\n"
-       "xray_photon_flux: The emitted photon flux. Note that unlike xray_flux, this is per cm^2. [photons/s/cm^2]\n"
-       "chandra_spectral_count_rate: The count rate as seen by chandra's ACIS-I within an energy channel [counts/]\n"
-       "xray_spectral_flux: The emitted xray flux within an energy channel [keV/s/m^2]\n"
-       "mean_temperature: The mean temperature along the line of sight [K]\n"
-       "luminosity_weighted_temperature: Calculates xray_flux*temperature along the line of sight. [keV/s/m^2*K]\n"
-       "mean_density: The mean density along the line of sight [M_sun/kpc^3]\n"
-       "mass: The total mass along the line of sight [M_sun]\n"
-       "potential: The gravitational potential [(km/s)^2]")
+       " * chandra_count_rate: count rate as seen by chandra, taking into account chandra's ACIS-I instrumental response [counts/s]\n"
+       " * xray_flux: The emitted xray flux [keV/s/m^2]\n"
+       " * xray_photon_flux: The emitted photon flux. Note that unlike xray_flux, this is per cm^2. [photons/s/cm^2]\n"
+       " * chandra_spectral_count_rate: The count rate as seen by chandra's ACIS-I within an energy channel [counts/]\n"
+       " * xray_spectral_flux: The emitted xray flux within an energy channel [keV/s/m^2]\n"
+       " * mean_temperature: The mean temperature along the line of sight [K]\n"
+       " * luminosity_weighted_temperature: Calculates xray_flux*temperature along the line of sight. [keV/s/m^2*K]\n"
+       " * mean_density: The mean baryon density along the line of sight [M_sun/kpc^3]\n"
+       " * mass: The total baryonic mass along the line of sight [M_sun]\n"
+       " * potential: The gravitational potential [(km/s)^2]\n"
+       " * dm_density: The dark matter density [M_sun/kpc^3]")
       ("quantity.xray_spectral_flux.energy",
        boost::program_options::value<math::scalar>(&_xray_spectral_flux_energy)->default_value(
          _xray_spectral_flux_energy),
@@ -477,7 +499,10 @@ quantity_command_line_parser::register_options(boost::program_options::options_d
       ("quantity.luminosity_weighted_temperature.max_energy",
        boost::program_options::value<math::scalar>(&_luminosity_weighted_temp_max_energy)->default_value(
          _luminosity_weighted_temp_max_energy),
-       "End of energy integration range for the luminosity_weighted_temperature quantity [keV]");
+       "End of energy integration range for the luminosity_weighted_temperature quantity [keV]")
+      ("quantity.dm.particle_mass",
+       boost::program_options::value<math::scalar>(&_dm_particle_mass)->default_value(_dm_particle_mass),
+       "The mass of a dark matter particle [10^10 M_sun/h]");
 }
 
 std::unique_ptr<reconstruction_quantity::quantity>
@@ -487,7 +512,7 @@ quantity_command_line_parser::create_quantity(const illcrawl_app& app) const
   {
     return std::unique_ptr<reconstruction_quantity::chandra_xray_total_count_rate>{
       new reconstruction_quantity::chandra_xray_total_count_rate{
-        &(app.get_data_loader()),
+            &(app.get_data_loader()),
             app.get_unit_converter(),
             app.get_environment().get_compute_device(),
             app.get_redshift(),
@@ -619,6 +644,18 @@ quantity_command_line_parser::create_quantity(const illcrawl_app& app) const
       }
     };
   }
+  else if(_quantity_selection == "dm_density")
+  {
+    assert_greater_zero(this->_dm_particle_mass, "Dark matter particle mass must be > 0");
+
+    return std::unique_ptr<reconstruction_quantity::dm_density>{
+      new reconstruction_quantity::dm_density {
+        &(app.get_data_loader()),
+        app.get_unit_converter(),
+        _dm_particle_mass
+      }
+    };
+  }
   else
     throw std::invalid_argument("Unknwon quantity: " + _quantity_selection);
 }
@@ -668,6 +705,9 @@ quantity_command_line_parser::save_configuration_to_fits_header(util::fits_heade
   header->add_entry("quantity.luminosity_weighted_temp.max_energy",
                     _luminosity_weighted_temp_max_energy,
                     "luminosity_weighted_temperature quantity: Maximum energy for the energy integration [keV]");
+  header->add_entry("quantity.dm.particle_mass",
+                    _dm_particle_mass,
+                    "The dark matter particle mass [10^10 Msun/h]");
 }
 
 void

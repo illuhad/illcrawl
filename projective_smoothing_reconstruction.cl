@@ -22,7 +22,7 @@
 #ifndef RECONSTRUCTION_CL
 #define RECONSTRUCTION_CL
 
-#include "interpolation.cl"
+#include "smoothing_kernel.cl"
 
 
 

@@ -47,12 +47,14 @@ add_library(illcrawl_core STATIC
   illcrawl_app.cpp
   animation.cpp
   camera.cpp
+  quantity.cpp
   environment.cpp
   particle_distribution.cpp
   particle_grid.cpp
   chandra.cpp
   gaunt_factor.cpp
   integration.cpp
+  dm_reconstruction_backend_brute_force.cpp
   volumetric_reconstruction_backend_nn8.cpp
   volumetric_reconstruction_backend_tree.cpp
   volumetric_slice.cpp

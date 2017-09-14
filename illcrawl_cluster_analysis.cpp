@@ -60,11 +60,12 @@ int main(int argc, char** argv)
     std::unique_ptr<illcrawl::reconstruction_quantity::quantity> reconstructed_quantity =
         quantity_parser.create_quantity(app);
 
+    std::string coordinate_id = illcrawl::io::illustris_data_loader::get_coordinate_identifier();
     illcrawl::reconstructing_data_crawler reconstructor{
       app.create_reconstruction_backend(*reconstructed_quantity),
       app.get_environment().get_compute_device(),
       app.get_gas_distribution_volume_cutout(),
-      app.get_data_loader().get_coordinates(),
+      app.get_data_loader().get_dataset(coordinate_id),
       app.get_data_crawling_blocksize()
     };
 

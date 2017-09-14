@@ -710,5 +710,20 @@ __kernel void unprocessed_quantity(__global scalar* out,
   }
 }
 
+/// Sets the output to a constant value
+/// \param out Output array, with at least \c num_elements elements
+/// \param input The input value
+__kernel void constant_quantity(__global scalar* out,
+                                unsigned num_elements,
+                                scalar input)
+{
+  int tid = get_global_id(0);
+
+  if(tid < num_elements)
+  {
+    out[tid] = input;
+  }
+}
+
 
 #endif

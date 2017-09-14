@@ -68,18 +68,24 @@ public:
 class illustris_quantity : public quantity
 {
 public:
-  illustris_quantity(const io::illustris_data_loader* data,
+  illustris_quantity(io::illustris_data_loader* data,
                      const std::vector<std::string>& dataset_identifiers,
-                     const unit_converter& converter)
+                     const unit_converter& converter,
+                     std::size_t particle_type_id = 0)
     : _data{data},
       _dataset_identifiers{dataset_identifiers},
-      _converter{converter}
+      _converter{converter},
+      _particle_type_id{particle_type_id}
   {
+    _data->select_group(_particle_type_id);
     assert(_data != nullptr);
   }
 
   virtual std::vector<H5::DataSet> get_required_datasets() const override
   {
+    if(_data->get_current_group_name() != ("PartType"+std::to_string(_particle_type_id)))
+      _data->select_group(_particle_type_id);
+
     std::vector<H5::DataSet> result;
     for(std::string dataset_name : _dataset_identifiers)
       result.push_back(_data->get_dataset(dataset_name));
@@ -98,15 +104,16 @@ public:
     return true;
   }
 private:
-  const io::illustris_data_loader* _data;
+  io::illustris_data_loader* _data;
   std::vector<std::string> _dataset_identifiers;
   unit_converter _converter;
+  std::size_t _particle_type_id;
 };
 
 class density_based_quantity : public illustris_quantity
 {
 public:
-  density_based_quantity(const io::illustris_data_loader* data,
+  density_based_quantity(io::illustris_data_loader* data,
                          const unit_converter& converter)
       : illustris_quantity{
             data,
@@ -132,7 +139,7 @@ public:
 class density_temperature_electron_abundance_based_quantity : public illustris_quantity
 {
 public:
-  density_temperature_electron_abundance_based_quantity(const io::illustris_data_loader* data,
+  density_temperature_electron_abundance_based_quantity(io::illustris_data_loader* data,
                                                         const unit_converter& converter)
       : illustris_quantity{
             data,
@@ -160,7 +167,7 @@ public:
 class xray_flux_based_quantity : public density_temperature_electron_abundance_based_quantity
 {
 public:
-  xray_flux_based_quantity(const io::illustris_data_loader* data,
+  xray_flux_based_quantity(io::illustris_data_loader* data,
                            const unit_converter& converter,
                            const qcl::device_context_ptr& ctx,
                            math::scalar redshift,
@@ -212,7 +219,7 @@ private:
 class chandra_xray_total_count_rate : public xray_flux_based_quantity
 {
 public:
-  chandra_xray_total_count_rate(const io::illustris_data_loader* data,
+  chandra_xray_total_count_rate(io::illustris_data_loader* data,
                         const unit_converter& converter,
                         const qcl::device_context_ptr& ctx,
                         math::scalar redshift,
@@ -251,7 +258,7 @@ private:
 class chandra_xray_spectral_count_rate : public xray_flux_based_quantity
 {
 public:
-  chandra_xray_spectral_count_rate(const io::illustris_data_loader* data,
+  chandra_xray_spectral_count_rate(io::illustris_data_loader* data,
                         const unit_converter& converter,
                         const qcl::device_context_ptr& ctx,
                         math::scalar redshift,
@@ -306,7 +313,7 @@ template<flux_type Flux_type>
 class flux : public xray_flux_based_quantity
 {
 public:
-  flux(const io::illustris_data_loader* data,
+  flux(io::illustris_data_loader* data,
             const unit_converter& converter,
             const qcl::device_context_ptr& ctx,
             math::scalar redshift,
@@ -360,7 +367,7 @@ using xray_photon_flux = flux<flux_type::XRAY_PHOTON_FLUX>;
 class xray_spectral_flux : public xray_flux_based_quantity
 {
 public:
-  xray_spectral_flux(const io::illustris_data_loader* data,
+  xray_spectral_flux(io::illustris_data_loader* data,
                      const unit_converter& converter,
                      const qcl::device_context_ptr& ctx,
                      math::scalar redshift,
@@ -403,7 +410,7 @@ private:
 class luminosity_weighted_temperature : public xray_flux_based_quantity
 {
 public:
-  luminosity_weighted_temperature(const io::illustris_data_loader* data,
+  luminosity_weighted_temperature(io::illustris_data_loader* data,
                                   const unit_converter& converter,
                                   const qcl::device_context_ptr& ctx,
                                   math::scalar redshift,
@@ -445,7 +452,8 @@ private:
 class mean_temperature : public density_temperature_electron_abundance_based_quantity
 {
 public:
-  mean_temperature(const io::illustris_data_loader* data, const unit_converter& converter)
+  mean_temperature(io::illustris_data_loader* data,
+                   const unit_converter& converter)
       : density_temperature_electron_abundance_based_quantity{data, converter}
   {}
 
@@ -472,7 +480,7 @@ public:
 class interpolation_weight : public density_based_quantity
 {
 public:
-  interpolation_weight(const io::illustris_data_loader* data,
+  interpolation_weight(io::illustris_data_loader* data,
                        const unit_converter& converter)
       : density_based_quantity{data, converter}
   {}
@@ -500,7 +508,7 @@ public:
 class mean_density : public density_based_quantity
 {
 public:
-  mean_density(const io::illustris_data_loader* data,
+  mean_density(io::illustris_data_loader* data,
                const unit_converter& converter)
     : density_based_quantity{data, converter}
   {}
@@ -528,7 +536,7 @@ public:
 class mass : public density_based_quantity
 {
 public:
-  mass(const io::illustris_data_loader* data,
+  mass(io::illustris_data_loader* data,
        const unit_converter& converter)
       : density_based_quantity{data, converter}
   {}
@@ -557,7 +565,7 @@ public:
 class potential : public illustris_quantity
 {
 public:
-  potential(const io::illustris_data_loader* data,
+  potential(io::illustris_data_loader* data,
             const unit_converter& converter)
       : illustris_quantity{
           data,
@@ -600,6 +608,78 @@ public:
   virtual ~potential(){}
 };
 
+class dm_quantity : public illustris_quantity
+{
+public:
+  dm_quantity(io::illustris_data_loader* data,
+             const unit_converter& converter,
+             math::scalar dm_particle_mass ) // DM particle mass in 10^10 Msun/h
+    : illustris_quantity{data, std::vector<std::string>{}, converter, 1},
+      _dm_particle_mass{converter.mass_conversion_factor() * dm_particle_mass}
+  {}
+
+  virtual bool is_quantity_baryonic() const override
+  {
+    return false;
+  }
+
+  virtual ~dm_quantity(){}
+
+  virtual qcl::kernel_ptr get_kernel(const qcl::device_context_ptr &ctx) const override
+  {
+    return ctx->get_kernel("constant_quantity");
+  }
+
+  virtual std::vector<math::scalar> get_quantitiy_scaling_factors() const override
+  {
+    return std::vector<math::scalar>{};
+  }
+
+  virtual void push_additional_kernel_args(qcl::kernel_argument_list& args) const override
+  {
+    args.push(static_cast<device_scalar>(_dm_particle_mass));
+  }
+
+  math::scalar get_dm_particle_mass() const
+  {
+    return _dm_particle_mass;
+  }
+
+
+private:
+  math::scalar _dm_particle_mass;
+
+};
+
+
+class dm_density : public dm_quantity
+{
+public:
+  dm_density(io::illustris_data_loader* data,
+             const unit_converter& converter,
+             math::scalar dm_particle_mass) // DM particle mass in 10^10 Msun/h
+    : dm_quantity{data, converter, dm_particle_mass}
+  {}
+
+  virtual ~dm_density(){}
+
+  virtual math::scalar effective_volume_integration_dV(math::scalar dV,
+                                                       math::scalar integration_volume) const override
+  {
+    // mean density
+    return dV / integration_volume;
+  }
+
+  virtual math::scalar effective_line_of_sight_integration_dA(math::scalar dA,
+                                                              math::scalar integration_range) const override
+  {
+    // mean density
+    return 1.0/integration_range;
+  }
+
+
+};
+
 
 
 class quantity_transformation
@@ -608,45 +688,17 @@ public:
 
   quantity_transformation(const qcl::device_context_ptr& ctx,
                           const quantity& q,
-                          std::size_t blocksize)
-    : _ctx{ctx}, _quantity{q}, _blocksize{blocksize}, _num_elements{0}
-  {
-    _input_quantities.resize(q.get_required_datasets().size());
-    _input_buffers.resize(q.get_required_datasets().size());
-    _transfers_complete_events.resize(q.get_required_datasets().size());
-
-    for(std::size_t i = 0; i < _input_quantities.size(); ++i)
-      _input_quantities[i] = std::vector<device_scalar>(blocksize);
-
-    for(std::size_t i = 0; i < _input_quantities.size(); ++i)
-      _ctx->create_input_buffer<device_scalar>(_input_buffers[i], blocksize);
-    _ctx->create_buffer<device_scalar>(_result, CL_MEM_READ_WRITE, blocksize);
-
-    _scaling_factors = _quantity.get_quantitiy_scaling_factors();
-  }
+                          std::size_t blocksize);
 
   quantity_transformation(const quantity_transformation&) = delete;
   quantity_transformation& operator=(const quantity_transformation&) = delete;
 
-  const cl::Buffer& get_result_buffer() const
-  {
-    return _result;
-  }
+  const cl::Buffer& get_result_buffer() const;
 
   void retrieve_results(cl::Event* evt,
-                        std::vector<device_scalar>& out) const
-  {
-    out.resize(get_num_elements());
-    _ctx->memcpy_d2h_async(out.data(),
-                           get_result_buffer(),
-                           get_num_elements(),
-                           evt);
-  }
+                        std::vector<device_scalar>& out) const;
 
-  std::size_t get_num_elements() const
-  {
-    return _num_elements;
-  }
+  std::size_t get_num_elements() const;
 
   template<std::size_t N>
   void queue_input_quantities(const std::array<device_scalar, N>& input_elements)
@@ -655,61 +707,17 @@ public:
     queue_input_quantities(input_elements.data());
   }
 
-  void queue_input_quantities(const std::vector<device_scalar>& input_elements)
-  {
-    assert(input_elements.size() == _input_quantities.size());
-    queue_input_quantities(input_elements.data());
-  }
+  void queue_input_quantities(const std::vector<device_scalar>& input_elements);
 
-  void queue_input_quantities(const device_scalar* input_elements)
-  {
-    assert(_num_elements + 1 <= _blocksize);
-    for(std::size_t i = 0; i < _input_quantities.size(); ++i)
-      _input_quantities[i][_num_elements] =
-          static_cast<device_scalar>(_scaling_factors[i] * input_elements[i]);
+  void queue_input_quantities(const device_scalar* input_elements);
 
-    ++_num_elements;
-  }
+  void clear();
 
-  void clear()
-  {
-    _num_elements = 0;
-  }
+  void commit_data();
 
-  void commit_data()
-  {
-    for(std::size_t i = 0; i < _input_quantities.size(); ++i)
-      _ctx->memcpy_h2d_async(_input_buffers[i],
-                             _input_quantities[i].data(),
-                             _num_elements,
-                             &_transfers_complete_events[i]);
-  }
+  void operator()(cl::Event* evt) const;
 
-  void operator()(cl::Event* evt) const
-  {
-    qcl::kernel_ptr kernel = _quantity.get_kernel(_ctx);
-
-    qcl::kernel_argument_list args{kernel};
-    args.push(_result);
-    args.push(static_cast<cl_uint>(_num_elements));
-    for(std::size_t i = 0; i < _input_buffers.size(); ++i)
-      args.push(_input_buffers[i]);
-    _quantity.push_additional_kernel_args(args);
-
-    cl_int err =_ctx->get_command_queue().enqueueNDRangeKernel(*kernel,
-                                                               cl::NullRange,
-                                                               cl::NDRange(math::make_multiple_of(
-                                                                 local_size,
-                                                                 _num_elements)),
-                                                               cl::NDRange(local_size),
-                                                               &_transfers_complete_events, evt);
-    qcl::check_cl_error(err, "Could not enqueue quantity transformation kernel.");
-  }
-
-  std::size_t get_num_quantities() const
-  {
-    return _input_quantities.size();
-  }
+  std::size_t get_num_quantities() const;
 private:
   static constexpr std::size_t local_size = 256;
 

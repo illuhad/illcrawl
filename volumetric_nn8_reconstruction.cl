@@ -22,9 +22,21 @@
 #ifndef VOLUMETRIC_NN8_RECONSTRUCTION
 #define VOLUMETRIC_NN8_RECONSTRUCTION
 
-#include "interpolation.cl"
 #include "volumetric_nn8_tile_iteration_order.cl"
 #include "particle_grid.cl"
+#include "types.cl"
+
+scalar distance2(vector2 a, vector2 b)
+{
+  vector2 R = a-b;
+  return dot(R,R);
+}
+
+scalar distance23d(vector3 a, vector3 b)
+{
+  vector3 R = a-b;
+  return dot(R,R);
+}
 
 
 typedef float8 nearest_neighbors_list;
@@ -231,14 +243,23 @@ __kernel void finalize_volumetric_nn8_reconstruction(int num_evaluation_points,
     weight_sum += weights.s7;
 
     scalar dot_product = 0.0f;
-    dot_product += weights.s0 * values.s0;
+    // Go FMA, baby!
+    dot_product = fma(weights.s0, values.s0, dot_product);
+    dot_product = fma(weights.s1, values.s1, dot_product);
+    dot_product = fma(weights.s2, values.s2, dot_product);
+    dot_product = fma(weights.s3, values.s3, dot_product);
+    dot_product = fma(weights.s4, values.s4, dot_product);
+    dot_product = fma(weights.s5, values.s5, dot_product);
+    dot_product = fma(weights.s6, values.s6, dot_product);
+    dot_product = fma(weights.s7, values.s7, dot_product);
+    /*dot_product += weights.s0 * values.s0;
     dot_product += weights.s1 * values.s1;
     dot_product += weights.s2 * values.s2;
     dot_product += weights.s3 * values.s3;
     dot_product += weights.s4 * values.s4;
     dot_product += weights.s5 * values.s5;
     dot_product += weights.s6 * values.s6;
-    dot_product += weights.s7 * values.s7;
+    dot_product += weights.s7 * values.s7;*/
 
     scalar result = 0.0f;
     if(weight_sum != 0.0f && dot_product != 0.0f)

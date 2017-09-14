@@ -74,6 +74,7 @@ public:
   static std::string get_volume_identifier() {return "Volume";}
   static std::string get_masses_identifier() {return "Masses";}
   static std::string get_electron_abundance_identifier() {return "ElectronAbundance";}
+  static std::string get_dm_smoothing_length_identifier() {return "SubfindHsml"; }
 
   void select_group(unsigned particle_type_id)
   {
@@ -87,58 +88,23 @@ public:
     } catch (...) {}
 
     _group = _file.openGroup(group_name);
+    _current_group_name = group_name;
+  }
+
+  std::string get_current_group_name() const
+  {
+    return _current_group_name;
   }
 
 private:
 
+  std::string _current_group_name;
   const std::string _particle_type = "PartType";
 
   const std::string _filename;
   H5::H5File _file;
   H5::Group _group;
 };
-
-class illustris_gas_data_loader : public illustris_data_loader
-{
-public:
-  illustris_gas_data_loader(const std::string& filename)
-    : illustris_data_loader{filename, 0}
-  {}
-
-
-  inline
-  H5::DataSet get_coordinates() const
-  {
-    return get_dataset("Coordinates");
-  }
-
-  inline
-  H5::DataSet get_density() const
-  {
-    return get_dataset("Density");
-  }
-
-  inline
-  H5::DataSet get_internal_energy() const
-  {
-    return get_dataset("InternalEnergy");
-  }
-
-  inline
-  H5::DataSet get_smoothing_length() const
-  {
-    return get_dataset("SmoothingLength");
-  }
-
-  inline
-  H5::DataSet get_volume() const
-  {
-    return get_dataset("Volume");
-  }
-};
-
-
-
 
 template<class T, class Enable = void>
 struct hdf5_data_type
