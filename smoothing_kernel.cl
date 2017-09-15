@@ -70,20 +70,22 @@ scalar cubic_spline3d(scalar r,
                       scalar h)
 {
   scalar q = r/h;
+  if(q > 2.f)
+    return 0.0f;
 
   scalar norm = 1.f/(M_PI_F*h*h*h);
 
-  scalar q2 = q*q;
-  scalar q3 = q*q2;
-  scalar r0 = 1.f - 3.f/2.f*q2 + 3.f/4.f*q3;
-
-  scalar two_minus_q = 2.f-q;
-  scalar r1 = 1.f/4.f*two_minus_q*two_minus_q*two_minus_q;
-
   if(q <= 1)
-    return r0;
-
-  return fmax(r1, 0.0f);
+  {
+    scalar q2 = q*q;
+    scalar q3 = q*q2;
+    return norm * (1.f - 1.5f*q2 + 0.75f*q3);
+  }
+  else
+  {
+    scalar two_minus_q = 2.f-q;
+    return norm * 0.25f * two_minus_q*two_minus_q*two_minus_q;
+  }
 }
 
 
