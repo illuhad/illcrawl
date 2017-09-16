@@ -21,6 +21,7 @@
 #ifndef DM_RECONSTRUCTION_BACKEND_GRID_CL
 #define DM_RECONSTRUCTION_BACKEND_GRID_CL
 
+#include "smoothing_kernel.cl"
 #include "particle_grid.cl"
 #include "types.cl"
 
@@ -37,7 +38,7 @@ __kernel void dm_reconstruction_grid_smoothing(
 
     int num_evaluation_points,
     __global vector4* evaluation_points_coordinates,
-    __global scalar* result)
+    __global scalar* results)
 {
   size_t tid = get_global_id(0);
 
@@ -45,7 +46,7 @@ __kernel void dm_reconstruction_grid_smoothing(
 
   if(tid < num_evaluation_points)
   {
-    scalar result = result_buffer[tid];
+    scalar result = results[tid];
 
     vector4 evaluation_point = evaluation_points_coordinates[tid];
 
@@ -86,7 +87,7 @@ __kernel void dm_reconstruction_grid_smoothing(
 
               vector4 particle = particles[current_particle_id];
 
-              scalar r = distance(current_particle.xyz, evaluation_point.xyz);
+              scalar r = distance(particle.xyz, evaluation_point.xyz);
               result += particle.w * cubic_spline3d(r, smoothing_length);
             }
           }
@@ -94,7 +95,7 @@ __kernel void dm_reconstruction_grid_smoothing(
       }
     }
 
-    result_buffer[tid] = result;
+    results[tid] = result;
   }
 
 }
