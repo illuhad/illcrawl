@@ -188,4 +188,6 @@ __kernel void grid3d_determine_cells_end(__global vector4* sorted_particles,
   }
 }
 
+
+
 #endif

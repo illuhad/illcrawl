@@ -55,6 +55,7 @@ add_library(illcrawl_core STATIC
   gaunt_factor.cpp
   integration.cpp
   dm_reconstruction_backend_brute_force.cpp
+  dm_reconstruction_backend_grid.cpp
   volumetric_reconstruction_backend_nn8.cpp
   volumetric_reconstruction_backend_tree.cpp
   volumetric_slice.cpp

@@ -25,6 +25,7 @@
 #include "volumetric_reconstruction_backend_nn8.hpp"
 #include "volumetric_reconstruction_backend_tree.hpp"
 #include "dm_reconstruction_backend_brute_force.hpp"
+#include "dm_reconstruction_backend_grid.hpp"
 
 namespace illcrawl {
 
@@ -62,7 +63,8 @@ illcrawl_app::illcrawl_app(int& argc,
       ("reconstructor.dm",
        boost::program_options::value<std::string>(&_dm_reconstructor)->default_value(_dm_reconstructor),
        "The reconstructor used for quantities that rely on Dark Matter particles. Supported reconstructors:\n"
-       " * brute_force")
+       " * brute_force\n"
+       " * grid")
       ("data_crawler.blocksize",
        boost::program_options::value<std::size_t>(&_data_crawling_blocksize)->default_value(_data_crawling_blocksize),
        "The number of particles (or cells) that are read and processed in one block.");
@@ -405,6 +407,15 @@ illcrawl_app::create_dm_reconstruction_backend(
   {
     return std::unique_ptr<reconstruction_backend>{
       new reconstruction_backends::dm::brute_force{
+        _env.get_compute_device(),
+        _data_loader->get_dataset(dm_smoothing_length_id)
+      }
+    };
+  }
+  else if(this->_dm_reconstructor == "grid")
+  {
+    return std::unique_ptr<reconstruction_backend>{
+      new reconstruction_backends::dm::grid{
         _env.get_compute_device(),
         _data_loader->get_dataset(dm_smoothing_length_id)
       }

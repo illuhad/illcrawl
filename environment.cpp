@@ -62,6 +62,10 @@ environment::environment(int& argc, char**& argv)
                                            {
                                              "dm_reconstruction_brute_force_smoothing"
                                            });
+  _global_ctx->global_register_source_file("dm_reconstruction_backend_grid.cl",
+                                           {
+                                             "dm_reconstruction_grid_smoothing"
+                                           });
 
   _global_ctx->global_register_source_file("quantities.cl",
                                            // Kernels inside quantities.cl
@@ -88,6 +92,10 @@ environment::environment(int& argc, char**& argv)
                                              "grid3d_generate_sort_keys",
                                              "grid3d_determine_cells_begin",
                                              "grid3d_determine_cells_end"
+                                           });
+  _global_ctx->global_register_source_file("util.cl",
+                                           {
+                                             "util_create_sequence"
                                            });
 
   determine_num_local_processes();

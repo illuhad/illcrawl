@@ -22,7 +22,7 @@
 #ifndef VOLUMETRIC_NN8_RECONSTRUCTION
 #define VOLUMETRIC_NN8_RECONSTRUCTION
 
-#include "volumetric_nn8_tile_iteration_order.cl"
+#include "particle_grid_iteration_order.cl"
 #include "particle_grid.cl"
 #include "types.cl"
 

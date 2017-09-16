@@ -48,8 +48,6 @@ public:
   using particle = device_vector4;
   using boost_particle = boost_device_vector4;
 
-  static constexpr std::size_t target_num_particles_per_tile = 8;
-
   /// Data stored in the tiles:
   /// tile_descriptor.s[0] -- Index of first particle in tile
   /// tile_descriptor.s[1] -- Index of first particle not in the tile
@@ -58,7 +56,8 @@ public:
   using boost_cell_descriptor = boost::compute::int2_;
 
   particle_grid(const qcl::device_context_ptr& ctx,
-                const std::vector<particle>& particles);
+                const std::vector<particle>& particles,
+                std::size_t target_num_particles_per_cell = 8);
 
   device_vector3 get_grid_min_corner() const;
 
@@ -71,6 +70,25 @@ public:
   const cl::Buffer& get_particle_buffer() const;
 
   const cl::Event& get_grid_ready_event() const;
+
+  /// Generates a buffer that contains at the
+  /// i-th position the original index j
+  /// of the i-th particle in the sorted grid
+  /// that this particle had before the sorting.
+  /// This is useful for reconstruction engines that
+  /// need to access more particle properties than just
+  /// the quantity stored at particle.w (e.g., a reconstructor
+  /// may also require the smoothing length). This map
+  /// then allows to translate the index of a particle in the grid
+  /// back to the corresponding index j in an external array
+  /// (such as for the smoothing lengths).
+  /// \param out Will be filled with the indices as
+  /// described above. Does not need to be already
+  /// initialized. Data type is cl_ulong for each element.
+  void generate_original_index_map(cl::Buffer& out);
+
+  boost::compute::command_queue& get_boost_queue();
+  const boost::compute::command_queue& get_boost_queue() const;
 private:
   void build_tiles(std::size_t num_particles);
 
@@ -89,7 +107,11 @@ private:
 
   cl::Event _grid_ready;
 
+  std::size_t _num_particles = 0;
+
   boost::compute::command_queue _boost_queue;
+
+  std::size_t _target_num_particles_per_cell;
 };
 
 

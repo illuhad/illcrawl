@@ -23,8 +23,11 @@
 namespace illcrawl {
 
 particle_grid::particle_grid(const qcl::device_context_ptr& ctx,
-                             const std::vector<particle>& particles)
-  : _ctx{ctx}, _boost_queue{ctx->get_command_queue().get()}
+                             const std::vector<particle>& particles,
+                             std::size_t target_num_particles_per_cell)
+  : _ctx{ctx},
+    _boost_queue{ctx->get_command_queue().get()},
+    _target_num_particles_per_cell{target_num_particles_per_cell}
 {
   assert(ctx != nullptr);
 
@@ -75,7 +78,7 @@ particle_grid::particle_grid(const qcl::device_context_ptr& ctx,
     grid_volume *= (max_particle_coordinates[i] - min_particle_coordinates[i]);
   }
 
-  math::scalar tile_volume = static_cast<math::scalar>(target_num_particles_per_tile) /
+  math::scalar tile_volume = static_cast<math::scalar>(_target_num_particles_per_cell) /
       static_cast<math::scalar>(particles.size()) * grid_volume;
   math::scalar tile_width = std::cbrt(tile_volume);
 
@@ -206,8 +209,48 @@ void particle_grid::build_tiles(std::size_t num_particles)
                                                        nullptr,
                                                        &_grid_ready);
   qcl::check_cl_error(err, "Could not enqueue cell end kernel");
+
+  this->_num_particles = num_particles;
 }
 
+void
+particle_grid::generate_original_index_map(cl::Buffer& out)
+{
+  _ctx->create_buffer<cl_ulong>(out, _num_particles);
 
+  qcl::kernel_ptr sequence_creation_kernel = _ctx->get_kernel("util_create_sequence");
+
+  qcl::kernel_argument_list args{sequence_creation_kernel};
+  args.push(out);
+  args.push(static_cast<cl_ulong>(0));
+  args.push(static_cast<cl_ulong>(_num_particles));
+
+  cl_int err = _ctx->enqueue_ndrange_kernel(sequence_creation_kernel,
+                                            cl::NDRange{_num_particles},
+                                            cl::NDRange{local_size});
+  qcl::check_cl_error(err, "Could not enqueue sequence creation kernel");
+
+  err = _ctx->get_command_queue().finish();
+
+  qcl::check_cl_error(err, "Error while waiting for sequence creation kernel to complete");
+
+  boost::compute::sort_by_key(qcl::create_buffer_iterator<cl_ulong>(_grid_cell_keys_buffer, 0),
+                              qcl::create_buffer_iterator<cl_ulong>(_grid_cell_keys_buffer, _num_particles),
+                              qcl::create_buffer_iterator<cl_ulong>(out, 0),
+                              boost::compute::less<cl_ulong>(),
+                              _boost_queue);
+}
+
+boost::compute::command_queue&
+particle_grid::get_boost_queue()
+{
+  return _boost_queue;
+}
+
+const boost::compute::command_queue&
+particle_grid::get_boost_queue() const
+{
+  return _boost_queue;
+}
 
 }
