@@ -67,7 +67,7 @@ namespace detail {
 /// will include a trailing \0 in the strings,
 /// which can lead to problems. This function removes
 /// '\0' from the string
-static void remove_zeros(std::string& s)
+inline void remove_zeros(std::string& s)
 {
   std::size_t pos = std::string::npos;
   while((pos = s.find('\0')) != std::string::npos)

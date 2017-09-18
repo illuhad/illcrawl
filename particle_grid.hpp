@@ -71,6 +71,20 @@ public:
 
   const cl::Event& get_grid_ready_event() const;
 
+  boost::compute::command_queue& get_boost_queue();
+  const boost::compute::command_queue& get_boost_queue() const;
+
+  std::size_t get_num_particles() const;
+protected:
+  /// Determines the maximum value of a scalar quantity that has been
+  /// sorted into the cells using \c sort_scalars_into_cells()
+  /// for each cell.
+  void determine_max_values_for_cells(const cl::Buffer& values,
+                                      cl::Buffer& out);
+
+  /// Sorts an array of scalars for each particle into the cells
+  void sort_scalars_into_cells(cl::Buffer& values) const;
+private:
   /// Generates a buffer that contains at the
   /// i-th position the original index j
   /// of the i-th particle in the sorted grid
@@ -85,18 +99,19 @@ public:
   /// \param out Will be filled with the indices as
   /// described above. Does not need to be already
   /// initialized. Data type is cl_ulong for each element.
-  void generate_original_index_map(cl::Buffer& out);
+  void generate_sorted_to_unsorted_map(cl::Buffer& out,
+                                       std::size_t num_particles);
 
-  boost::compute::command_queue& get_boost_queue();
-  const boost::compute::command_queue& get_boost_queue() const;
-private:
   void build_tiles(std::size_t num_particles);
+
+  void generate_cell_keys(std::size_t num_particles);
 
   static constexpr std::size_t local_size = 512;
 
   cl::Buffer _particles_buffer;
   cl::Buffer _grid_cell_keys_buffer;
   cl::Buffer _cells_buffer;
+  cl::Buffer _sorted_to_unsorted_map;
 
   qcl::device_context_ptr _ctx;
 

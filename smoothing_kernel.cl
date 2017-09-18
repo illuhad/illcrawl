@@ -106,6 +106,23 @@ scalar get_weight(vector2 coord,
   return 0.0f;
 }
 
+scalar quartic_polynomial3d(scalar r, scalar h)
+{
+  scalar h_inv = 1.f/h;
+  // norm = 105/(32*h^3*pi)
+  scalar norm = 1.04445f*h_inv*h_inv*h_inv;
+  scalar q = fmin(r*h_inv, 1.f);
+  scalar q2 = q*q;
+  scalar q4 = q2*q2;
+
+  return norm * (1.f + q4 - 2.f * q2);
+}
+
+scalar quartic_polynomial3d_cutoff_radius(scalar h)
+{
+  return h;
+}
+
 /// See Monaghan (1992)
 scalar cubic_spline3d(scalar r,
                       scalar h)

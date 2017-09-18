@@ -18,7 +18,6 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <boost/compute/algorithm/max_element.hpp>
 
 #include "dm_reconstruction_backend_grid.hpp"
 
@@ -67,26 +66,12 @@ grid::setup_particles(const std::vector<particle>& particles,
   assert(particles.size() <= this->_blocksize);
   assert(additional_dataset.size() == 1);
 
-  _smoothing_lengths_buffer = additional_dataset[0];
-
-  // Create a grid with 64 particles on average per cell
-  // (this exploits the fact that the smoothing length is
-  // defined by illustris as the radius containing the
-  // ~64 nearest particles.)
-  _grid = std::move(std::unique_ptr<particle_grid>{
-      new particle_grid{_ctx, particles, 64}
+  _grid = std::move(std::unique_ptr<smoothing_particle_grid>{
+      new smoothing_particle_grid{_ctx, particles, additional_dataset[0]}
    });
-  _grid->generate_original_index_map(this->_sorted_to_unsorted_particles_map);
+
   _num_particles = particles.size();
 
-  // Determine maximum smoothing length of the give particle set
-  boost::compute::buffer_iterator<device_scalar> max_element_iterator =
-      boost::compute::max_element(
-        qcl::create_buffer_iterator<device_scalar>(_smoothing_lengths_buffer, 0),
-        qcl::create_buffer_iterator<device_scalar>(_smoothing_lengths_buffer, _num_particles),
-        _grid->get_boost_queue());
-
-  _maximum_smoothing_length = max_element_iterator.read(_grid->get_boost_queue());
 }
 
 void
@@ -124,9 +109,9 @@ grid::run()
   args.push(_grid->get_grid_cell_sizes());
   args.push(_grid->get_particle_buffer());
 
-  args.push(this->_sorted_to_unsorted_particles_map);
-  args.push(this->_smoothing_lengths_buffer);
-  args.push(static_cast<device_scalar>(this->_maximum_smoothing_length));
+  args.push(_grid->get_sorted_smoothing_lengths());
+  args.push(_grid->get_overall_max_smoothing_length());
+  args.push(_grid->get_max_smoothing_length_per_cell());
 
   args.push(static_cast<cl_int>(this->_num_evaluation_points));
   args.push(this->_evaluation_points_buffer);

@@ -93,7 +93,7 @@ reconstructing_data_crawler::reconstructing_data_crawler(
 
 
   for(cl::Buffer& buff : _additional_data_buffers)
-    _ctx->create_input_buffer<device_scalar>(buff, _blocksize);
+    _ctx->create_buffer<device_scalar>(buff, _blocksize);
 
 }
 

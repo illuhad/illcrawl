@@ -22,6 +22,7 @@
 #define PARTICLE_GRID_CL
 
 #include "types.cl"
+#include "util.cl"
 
 typedef struct
 {
@@ -185,6 +186,32 @@ __kernel void grid3d_determine_cells_end(__global vector4* sorted_particles,
 
     if(is_last_particle_of_cell)
       cells_out[cell_key].y = tid + 1;
+  }
+}
+
+DEFINE_APPLY_PERMUTATION_KERNEL(grid3d_sort_particles_into_cells, vector4);
+DEFINE_APPLY_PERMUTATION_KERNEL(grid3d_sort_scalars_into_cells, scalar);
+
+__kernel void grid3d_determine_max_per_cell(__global int2* cells,
+                                            __global scalar* data,
+                                            __global scalar* out,
+                                            unsigned long num_cells)
+{
+  size_t tid = get_global_id(0);
+
+  if(tid < num_cells)
+  {
+    int2 cell = cells[tid];
+    scalar current_max = 0.0f;
+
+    for(int i = cell.x; i < cell.y; ++i)
+    {
+      scalar current_value = data[i];
+      if(current_value > current_max)
+        current_max = current_value;
+    }
+
+    out[tid] = current_max;
   }
 }
 

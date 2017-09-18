@@ -33,4 +33,18 @@ __kernel void util_create_sequence(__global unsigned long* output_buffer,
   }
 }
 
+#define DEFINE_APPLY_PERMUTATION_KERNEL(kernel_name, T)        \
+__kernel void kernel_name(__global T* input_buffer,            \
+                          __global T* output_buffer,           \
+                          unsigned long num_elements,          \
+                          __global unsigned long* permutation) \
+{                                                              \
+  size_t tid = get_global_id(0);                               \
+  if(tid < num_elements)                                       \
+  {                                                            \
+    output_buffer[tid] = input_buffer[permutation[tid]];       \
+  }                                                            \
+}
+
+
 #endif

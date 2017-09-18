@@ -91,7 +91,10 @@ environment::environment(int& argc, char**& argv)
                                            {
                                              "grid3d_generate_sort_keys",
                                              "grid3d_determine_cells_begin",
-                                             "grid3d_determine_cells_end"
+                                             "grid3d_determine_cells_end",
+                                             "grid3d_sort_particles_into_cells",
+                                             "grid3d_sort_scalars_into_cells",
+                                             "grid3d_determine_max_per_cell"
                                            });
   _global_ctx->global_register_source_file("util.cl",
                                            {

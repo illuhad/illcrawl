@@ -51,6 +51,7 @@ add_library(illcrawl_core STATIC
   environment.cpp
   particle_distribution.cpp
   particle_grid.cpp
+  smoothing_particle_grid.cpp
   chandra.cpp
   gaunt_factor.cpp
   integration.cpp

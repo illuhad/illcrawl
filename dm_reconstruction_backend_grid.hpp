@@ -23,7 +23,7 @@
 
 #include "qcl.hpp"
 #include "reconstruction_backend.hpp"
-#include "particle_grid.hpp"
+#include "smoothing_particle_grid.hpp"
 
 namespace illcrawl {
 namespace reconstruction_backends {
@@ -59,15 +59,13 @@ private:
 
   std::size_t _blocksize;
 
-  cl::Buffer _smoothing_lengths_buffer;
   cl::Buffer _result_buffer;
   cl::Buffer _evaluation_points_buffer;
-  cl::Buffer _sorted_to_unsorted_particles_map;
 
   std::size_t _num_evaluation_points;
   std::size_t _num_particles;
 
-  std::unique_ptr<particle_grid> _grid;
+  std::unique_ptr<smoothing_particle_grid> _grid;
 
   device_scalar _maximum_smoothing_length = 0.0f;
 

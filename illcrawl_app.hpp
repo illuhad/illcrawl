@@ -139,7 +139,7 @@ private:
 
 
   std::string _voronoi_reconstructor = "nn8";
-  std::string _dm_reconstructor = "brute_force";
+  std::string _dm_reconstructor = "grid";
   math::scalar _tree_opening_angle = 0.4;
 
   std::size_t _data_crawling_blocksize = 40000000;
