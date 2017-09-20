@@ -40,8 +40,8 @@ feel free to do so, but you will be pretty much on your own. In the following, I
 
 ### Building illcrawl
 Once all requirements are satisfied, building should be straightforward.
-  1. Create a build directory: `$ mkdir build`
-  2. Execute cmake. This will generate a Makefile taylored for your specific system: `$ cmake <Path to Illcrawl source directory>`
+  1. Create a build directory and enter it: `$ mkdir build; cd build`
+  2. Execute cmake. This generates a Makefile in your build directory: `$ cmake <Path to Illcrawl source directory>`
   3. Compile: `$ make`
 
 This should create the following executables and libraries in your build directory:
