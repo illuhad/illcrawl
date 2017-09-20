@@ -49,14 +49,17 @@ add_library(illcrawl_core STATIC
   camera.cpp
   quantity.cpp
   environment.cpp
-  particle_distribution.cpp
-  particle_grid.cpp
   smoothing_particle_grid.cpp
   chandra.cpp
   gaunt_factor.cpp
   integration.cpp
+  projection.cpp
+  particle_distribution.cpp
+  particle_grid.cpp
   dm_reconstruction_backend_brute_force.cpp
   dm_reconstruction_backend_grid.cpp
+  projective_smoothing_backend_grid.cpp
+  projective_smoothing_reconstruction.cpp
   volumetric_reconstruction_backend_nn8.cpp
   volumetric_reconstruction_backend_tree.cpp
   volumetric_slice.cpp

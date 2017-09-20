@@ -20,7 +20,7 @@
 #include <cassert>
 
 #include "animation.hpp"
-#include "volumetric_integration.hpp"
+#include "projection.hpp"
 
 namespace illcrawl {
 
@@ -231,13 +231,13 @@ integrated_projection::operator()(const camera& cam,
                                   std::size_t num_frames,
                                   util::multi_array<device_scalar>& out)
 {
-  volumetric_integration integrator{_ctx, cam};
+  projection p{_ctx, cam};
 
-  integrator.create_projection(*_reconstructor,
-                               _reconstructed_quantity,
-                               _integration_range,
-                               _tolerance,
-                               out);
+  p.create_projection(*_reconstructor,
+                      _reconstructed_quantity,
+                      _integration_range,
+                      _tolerance,
+                      out);
 }
 
 /******** Implementation of multi_quantity_integrated_projection ********/
@@ -272,14 +272,14 @@ multi_quantity_integrated_projection::operator()(const camera& cam,
   // nothing has changed and reuse the previous state.
   _reconstructor->purge_state();
 
-  volumetric_integration integrator{_ctx, cam};
+  projection p{_ctx, cam};
 
   auto quantity = _create_quantity(cam, frame_id, num_frames);
-  integrator.create_projection(*_reconstructor,
-                               *quantity,
-                               _integration_range,
-                               _tolerance,
-                               out);
+  p.create_projection(*_reconstructor,
+                      *quantity,
+                      _integration_range,
+                      _tolerance,
+                      out);
 }
 
 /************* Implementation of single_quantity_generator **************/

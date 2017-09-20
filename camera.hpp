@@ -23,6 +23,7 @@
 
 #include <cassert>
 
+#include "qcl.hpp"
 #include "math.hpp"
 
 namespace illcrawl {
@@ -100,6 +101,12 @@ public:
   /// rotated
   void rotate(const math::matrix3x3& rotation_matrix,
               const math::vector3& rotation_center);
+
+  /// Generates an OpenCL buffer of type \c device_vector4 with
+  /// i-th entry corresponding to the coordinates of the pixel
+  /// at (ix,iy) such that i=iy*N_pix_x+ix
+  void generate_pixel_coordinates(const qcl::device_context_ptr& ctx,
+                                  cl::Buffer& out) const;
 
 private:
   /// Calculates the basis vectors of the pixel screen.

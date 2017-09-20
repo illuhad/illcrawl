@@ -18,12 +18,16 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef DM_RECONSTRUCTION_BACKEND_GRID_CL
-#define DM_RECONSTRUCTION_BACKEND_GRID_CL
 
+#ifndef PROJECTIVE_SMOOTHING_GRID_RECONSTRUCTION_CL
+#define PROJECTIVE_SMOOTHING_GRID_RECONSTRUCTION_CL
+
+
+#define SPG_PROJECTION
 #include "smoothing_particle_grid.cl"
 
-__kernel void dm_reconstruction_grid_smoothing(
+
+__kernel void projective_smoothing_grid(
     __global int2* grid_cells,
     int3 num_grid_cells,
     vector3 grid_min_corner,
@@ -51,5 +55,6 @@ __kernel void dm_reconstruction_grid_smoothing(
                          results);
 }
 
-#endif
 
+
+#endif

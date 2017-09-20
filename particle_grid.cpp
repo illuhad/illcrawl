@@ -84,15 +84,22 @@ particle_grid::particle_grid(const qcl::device_context_ptr& ctx,
 
   for(std::size_t i = 0; i < 3; ++i)
   {
+    assert(max_particle_coordinates[i] > min_particle_coordinates[i]);
+
     _num_cells.s[i] = static_cast<cl_int>(
           std::ceil((max_particle_coordinates[i] - min_particle_coordinates[i])/cell_width));
     _grid_min_corner.s[i] = static_cast<device_scalar>(min_particle_coordinates[i]);
     _cell_sizes.s[i] = static_cast<device_scalar>(cell_width);
+
+    assert(_num_cells.s[i] > 0);
+    assert(_cell_sizes.s[i] > 0);
   }
 
   _total_num_cells = static_cast<std::size_t>(_num_cells.s[0]) *
       static_cast<std::size_t>(_num_cells.s[1]) *
       static_cast<std::size_t>(_num_cells.s[2]);
+
+  assert(_total_num_cells > 0);
 
   _ctx->create_buffer<cl_ulong>(_grid_cell_keys_buffer,
                                 CL_MEM_READ_WRITE,

@@ -96,6 +96,7 @@ distributed_mc_radial_profile::operator()(reconstructing_data_crawler& reconstru
   // broadcast densities to all processes
   boost::mpi::broadcast(_partitioning->get_communicator(), sample_densities, root_process);
 
+
   run(sample_densities,
       reconstructor,
       reconstructed_quantity,

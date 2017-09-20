@@ -86,6 +86,14 @@ public:
   std::unique_ptr<reconstruction_backend>
   create_reconstruction_backend(const reconstruction_quantity::quantity& q) const;
 
+  std::unique_ptr<reconstruction_backend>
+  create_projective_dm_reconstruction_backend(
+      const camera& cam,
+      math::scalar max_integration_depth) const;
+
+  std::unique_ptr<reconstruction_backend>
+  create_projective_dm_reconstruction_backend() const;
+
   std::size_t get_data_crawling_blocksize() const;
 
 private:
@@ -140,6 +148,7 @@ private:
 
   std::string _voronoi_reconstructor = "nn8";
   std::string _dm_reconstructor = "grid";
+  std::string _dm_projective_reconstructor = "grid";
   math::scalar _tree_opening_angle = 0.4;
 
   std::size_t _data_crawling_blocksize = 40000000;

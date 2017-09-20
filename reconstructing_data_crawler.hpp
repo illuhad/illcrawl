@@ -92,6 +92,10 @@ public:
   reconstructing_data_crawler& operator=(const reconstructing_data_crawler&) = delete;
   reconstructing_data_crawler(const reconstructing_data_crawler&) = delete;
 
+  /// Sets the reconstruction backend. This also leads
+  /// to purging of the reconstruction state.
+  void set_backend(std::unique_ptr<reconstruction_backend> backend);
+
   /// Purges the state of the reconstructor,
   /// making sure that following reconstructions will not reuse
   /// any data from previous reconstructions.
@@ -125,6 +129,10 @@ public:
   /// \return The OpenCL context
   const qcl::device_context_ptr get_context() const;
 
+  /// \return The reconstruction backend
+  reconstruction_backend* get_backend();
+  /// \return The reconstruction backend
+  const reconstruction_backend* get_backend() const;
 private:
   /// Executes the quantity transformation
   void run_quantity_transformation(reconstruction_quantity::quantity_transformation& transformation,

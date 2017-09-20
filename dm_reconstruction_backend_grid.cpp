@@ -26,12 +26,16 @@ namespace reconstruction_backends {
 namespace dm {
 
 grid::grid(const qcl::device_context_ptr& ctx,
-           const H5::DataSet& smoothing_lengths)
+           const H5::DataSet& smoothing_lengths,
+           const std::string& reconstruction_kernel_variant,
+           std::size_t target_num_particles_per_cell)
   : _ctx{ctx},
     _smoothing_lengths{smoothing_lengths},
     _blocksize{0},
     _num_evaluation_points{0},
-    _num_particles{0}
+    _num_particles{0},
+    _reconstruction_kernel_name{reconstruction_kernel_variant},
+    _target_num_particles_per_cell{target_num_particles_per_cell}
 {}
 
 std::vector<H5::DataSet>
@@ -66,8 +70,14 @@ grid::setup_particles(const std::vector<particle>& particles,
   assert(particles.size() <= this->_blocksize);
   assert(additional_dataset.size() == 1);
 
+  // First release resources before recreating the grid
+  // to keep peak memory usage low
+  _grid = nullptr;
   _grid = std::move(std::unique_ptr<smoothing_particle_grid>{
-      new smoothing_particle_grid{_ctx, particles, additional_dataset[0]}
+      new smoothing_particle_grid{_ctx,
+                                  particles,
+                                  additional_dataset[0],
+                                  _target_num_particles_per_cell}
    });
 
   _num_particles = particles.size();
@@ -100,7 +110,7 @@ void
 grid::run()
 {
   qcl::kernel_ptr reconstruction_kernel =
-      _ctx->get_kernel("dm_reconstruction_grid_smoothing");
+      _ctx->get_kernel(_reconstruction_kernel_name);
 
   qcl::kernel_argument_list args{reconstruction_kernel};
   args.push(_grid->get_grid_cells_buffer());

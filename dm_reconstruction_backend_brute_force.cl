@@ -74,14 +74,12 @@ __kernel void dm_reconstruction_brute_force_smoothing(__global vector4* particle
       scalar  current_smoothing_length = smoothing_length_cache[i];
 
       scalar r = distance(current_particle.xyz, evaluation_point.xyz);
-      // Smoothing kernel weight
-#ifdef USE_CUBIC_SPLINE
-      scalar W = cubic_spline3d(r, current_smoothing_length);
-#else
-      scalar W = quartic_polynomial3d(r, current_smoothing_length);
-#endif
-      // Particle "mass" is stored in current_particle.w
-      result += current_particle.w * W;
+
+      if(r < CUTOFF_RADIUS(current_smoothing_length))
+      {
+        // Particle "mass" is stored in current_particle.w
+        result += current_particle.w * SMOOTHING_KERNEL(r, current_smoothing_length);
+      }
     }
   }
 

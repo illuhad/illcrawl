@@ -18,32 +18,31 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef SMOOTHING_PARTICLE_GRID
-#define SMOOTHING_PARTICLE_GRID
-
-#include "particle_grid.hpp"
+#include "dm_reconstruction_backend_grid.hpp"
+#include "projective_smoothing_backend.hpp"
 
 namespace illcrawl {
+namespace reconstruction_backends {
+namespace dm {
 
-class smoothing_particle_grid : public particle_grid
+class projective_smoothing_grid : public projective_smoothing_backend,
+                                  public grid
 {
 public:
-  smoothing_particle_grid(const qcl::device_context_ptr& ctx,
-                          const std::vector<particle>& particles,
-                          const cl::Buffer& smoothing_lengths,
-                          std::size_t target_num_particles_per_cell = 64);
+  projective_smoothing_grid(const qcl::device_context_ptr& ctx,
+                            const H5::DataSet& smoothing_lengths);
 
-  const cl::Buffer& get_sorted_smoothing_lengths() const;
-  const cl::Buffer& get_max_smoothing_length_per_cell() const;
-  device_scalar get_overall_max_smoothing_length() const;
+  virtual ~projective_smoothing_grid(){}
 
+  virtual void setup_projected_particles(
+                   const cl::Buffer& particles,
+                   std::size_t num_particles,
+                   const std::vector<cl::Buffer>& additional_datasets) override;
 private:
-  cl::Buffer _sorted_smoothing_lengths;
-  cl::Buffer _maximum_smoothing_lengths_for_cells;
-
-  device_scalar _maximum_smoothing_length = 0.0f;
+  qcl::device_context_ptr _ctx;
 };
 
-}
 
-#endif
+}
+}
+}

@@ -37,6 +37,7 @@
 #include "animation.hpp"
 #include "spectrum.hpp"
 #include "uniform_work_partitioner.hpp"
+#include "projection.hpp"
 
 #include "illcrawl_app.hpp"
 
@@ -129,7 +130,10 @@ void run(const illcrawl::illcrawl_app& app,
   {
     app.output_stream() << "Starting volumetric/integrative projection..." << std::endl;
 
-    illcrawl::volumetric_integration integrator{
+    if(!quantity->is_quantity_baryonic())
+      reconstructor.set_backend(app.create_projective_dm_reconstruction_backend());
+
+    illcrawl::projection integrator{
       app.get_environment().get_compute_device(),
       cam
     };
@@ -184,6 +188,9 @@ void run(const illcrawl::illcrawl_app& app,
   }
   else if(options.render_target == "animation")
   {
+    if(!quantity->is_quantity_baryonic())
+      reconstructor.set_backend(app.create_projective_dm_reconstruction_backend());
+
     camera_name = "camera_frame0";
     app.output_stream() << "Starting animation..." << std::endl;
 

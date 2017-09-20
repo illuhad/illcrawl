@@ -26,6 +26,8 @@
 #include "volumetric_reconstruction_backend_tree.hpp"
 #include "dm_reconstruction_backend_brute_force.hpp"
 #include "dm_reconstruction_backend_grid.hpp"
+#include "projective_smoothing_reconstruction.hpp"
+#include "projective_smoothing_backend_grid.hpp"
 
 namespace illcrawl {
 
@@ -64,6 +66,10 @@ illcrawl_app::illcrawl_app(int& argc,
        boost::program_options::value<std::string>(&_dm_reconstructor)->default_value(_dm_reconstructor),
        "The reconstructor used for quantities that rely on Dark Matter particles. Supported reconstructors:\n"
        " * brute_force\n"
+       " * grid")
+      ("reconstructor.dm.projective",
+       boost::program_options::value<std::string>(&_dm_projective_reconstructor)->default_value(_dm_projective_reconstructor),
+       "The projective reconstructor used to project DM quantities. Supported reconstructors:\n"
        " * grid")
       ("data_crawler.blocksize",
        boost::program_options::value<std::size_t>(&_data_crawling_blocksize)->default_value(_data_crawling_blocksize),
@@ -236,6 +242,8 @@ illcrawl_app::save_settings_to_fits(util::fits_header* header) const
                     this->_voronoi_reconstructor);
   header->add_entry("renderer.dm_reconstructor",
                     this->_dm_reconstructor);
+  header->add_entry("renderer.dm_projective_reconstructor",
+                    this->_dm_projective_reconstructor);
   header->add_entry("renderer.partitioner","uniform","The parallel work partitioning strategy");
   header->add_entry("data_crawler.blocksize",
                     static_cast<unsigned long long>(_data_crawling_blocksize),
@@ -436,6 +444,49 @@ illcrawl_app::create_reconstruction_backend(const reconstruction_quantity::quant
 }
 
 
+std::unique_ptr<reconstruction_backend>
+illcrawl_app::create_projective_dm_reconstruction_backend(
+    const camera& cam,
+    math::scalar max_integration_depth) const
+{
+  std::unique_ptr<projective_smoothing_backend> backend;
+
+
+  if(_data_loader->get_current_group_name() != "PartType1")
+    _data_loader->select_group(1);
+  std::string dm_smoothing_length_id =
+      io::illustris_data_loader::get_dm_smoothing_length_identifier();
+
+  if(this->_dm_projective_reconstructor == "grid")
+  {
+    backend.reset(new reconstruction_backends::dm::projective_smoothing_grid{
+                    _env.get_compute_device(),
+                    _data_loader->get_dataset(dm_smoothing_length_id)
+                  });
+  }
+  else
+    throw std::invalid_argument{"Unknown DM projective reconstruction backend: "+
+                                this->_dm_projective_reconstructor};
+
+
+  return std::unique_ptr<reconstruction_backend>{
+    new reconstruction_backends::dm::projective_smoothing{
+      this->_env.get_compute_device(),
+      cam,
+      max_integration_depth,
+      std::move(backend)
+    }
+  };
+}
+
+std::unique_ptr<reconstruction_backend>
+illcrawl_app::create_projective_dm_reconstruction_backend() const
+{
+  return this->create_projective_dm_reconstruction_backend(camera{},
+                                                           1.0);
+}
+
+
 std::size_t
 illcrawl_app::get_data_crawling_blocksize() const
 {
@@ -462,7 +513,7 @@ quantity_command_line_parser::register_options(boost::program_options::options_d
        " * mean_density: The mean baryon density along the line of sight [M_sun/kpc^3]\n"
        " * mass: The total baryonic mass along the line of sight [M_sun]\n"
        " * potential: The gravitational potential [(km/s)^2]\n"
-       " * dm_density: The dark matter density [M_sun/kpc^3]")
+       " * dm_mean_density: The dark matter mean density [M_sun/kpc^3]")
       ("quantity.xray_spectral_flux.energy",
        boost::program_options::value<math::scalar>(&_xray_spectral_flux_energy)->default_value(
          _xray_spectral_flux_energy),
@@ -655,7 +706,7 @@ quantity_command_line_parser::create_quantity(const illcrawl_app& app) const
       }
     };
   }
-  else if(_quantity_selection == "dm_density")
+  else if(_quantity_selection == "dm_mean_density")
   {
     assert_greater_zero(this->_dm_particle_mass, "Dark matter particle mass must be > 0");
 

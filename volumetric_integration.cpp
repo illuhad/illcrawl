@@ -47,7 +47,7 @@ volumetric_integration::create_projection(reconstructing_data_crawler& reconstru
 
   integration::parallel_runge_kutta_fehlberg integration_engine{
     _ctx,
-        total_num_pixels
+    total_num_pixels
   };
 
   integration::parallel_pixel_integrand integrand{

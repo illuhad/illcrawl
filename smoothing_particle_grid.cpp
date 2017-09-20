@@ -27,8 +27,9 @@ namespace illcrawl {
 smoothing_particle_grid::smoothing_particle_grid(
                         const qcl::device_context_ptr& ctx,
                         const std::vector<particle>& particles,
-                        const cl::Buffer& smoothing_lengths)
-  : particle_grid{ctx, particles, 64}
+                        const cl::Buffer& smoothing_lengths,
+                        std::size_t target_num_particles_per_cell)
+  : particle_grid{ctx, particles, target_num_particles_per_cell}
 {
   this->_sorted_smoothing_lengths = smoothing_lengths;
   this->sort_scalars_into_cells(_sorted_smoothing_lengths);

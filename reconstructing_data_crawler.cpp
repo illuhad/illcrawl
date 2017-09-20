@@ -82,21 +82,27 @@ reconstructing_data_crawler::reconstructing_data_crawler(
                          const volume_cutout& render_volume,
                          const H5::DataSet& coordinates,
                          std::size_t blocksize)
-  : _backend{std::move(backend)},
-    _ctx{ctx},
+  : _ctx{ctx},
     _render_volume{render_volume},
     _coordinate_dataset{coordinates},
     _blocksize{blocksize}
 {
-  this->_backend->init_backend(blocksize);
-  _additional_data_buffers.resize(this->_backend->get_required_additional_datasets().size());
+  set_backend(std::move(backend));
+}
 
+
+void reconstructing_data_crawler::set_backend(
+    std::unique_ptr<reconstruction_backend> backend)
+{
+  this->_backend = std::move(backend);
+  this->purge_state();
+  this->_backend->init_backend(_blocksize);
+
+  _additional_data_buffers.resize(this->_backend->get_required_additional_datasets().size());
 
   for(cl::Buffer& buff : _additional_data_buffers)
     _ctx->create_buffer<device_scalar>(buff, _blocksize);
-
 }
-
 
 void reconstructing_data_crawler::purge_state()
 {
@@ -308,6 +314,19 @@ reconstructing_data_crawler::run_quantity_transformation(
   err = transformation_result_retrieved.wait();
   qcl::check_cl_error(err, "Error while retrieving the quantity transformation results.");
 
+}
+
+
+reconstruction_backend*
+reconstructing_data_crawler::get_backend()
+{
+  return _backend.get();
+}
+
+const reconstruction_backend*
+reconstructing_data_crawler::get_backend() const
+{
+  return _backend.get();
 }
 
 }

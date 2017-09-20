@@ -47,8 +47,12 @@ environment::environment(int& argc, char**& argv)
     throw std::runtime_error{"No OpenCL GPU devices found!"};
   }
 
-  _global_ctx->global_register_source_file("projective_smoothing_reconstruction.cl",
-                                           {"image_tile_based_reconstruction2D"});
+  _global_ctx->global_register_source_file("camera.cl",
+                                           {
+                                             "camera_generate_pixel_coordinates"
+                                           });
+  _global_ctx->global_register_source_file("projective_smoothing_backend_grid.cl",
+                                           {"projective_smoothing_grid"});
   _global_ctx->global_register_source_file("volumetric_nn8_reconstruction.cl",
                                            {
                                              "volumetric_nn8_reconstruction",
@@ -66,7 +70,6 @@ environment::environment(int& argc, char**& argv)
                                            {
                                              "dm_reconstruction_grid_smoothing"
                                            });
-
   _global_ctx->global_register_source_file("quantities.cl",
                                            // Kernels inside quantities.cl
                                            {
@@ -99,6 +102,11 @@ environment::environment(int& argc, char**& argv)
   _global_ctx->global_register_source_file("util.cl",
                                            {
                                              "util_create_sequence"
+                                           });
+  _global_ctx->global_register_source_file("projection.cl",
+                                           {
+                                             "project_particles",
+                                             "project_evaluation_points"
                                            });
 
   determine_num_local_processes();

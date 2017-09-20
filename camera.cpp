@@ -19,6 +19,7 @@
  */
 
 #include "camera.hpp"
+#include "cl_types.hpp"
 
 namespace illcrawl {
 
@@ -153,6 +154,38 @@ void camera::update_min_position()
   _min_position -= (_num_pixels[1]/2.0) * _pixel_size * _screen_basis_vector1;
 }
 
+void camera::generate_pixel_coordinates(const qcl::device_context_ptr &ctx,
+                                        cl::Buffer &out) const
+{
+  ctx->create_buffer<device_vector4>(out, _num_pixels[0]*_num_pixels[1]);
+
+  qcl::kernel_ptr coord_generation_kernel =
+      ctx->get_kernel("camera_generate_pixel_coordinates");
+
+  qcl::kernel_argument_list args{coord_generation_kernel};
+  args.push(out);
+  args.push(static_cast<cl_ulong>(_num_pixels[0]));
+  args.push(static_cast<cl_ulong>(_num_pixels[1]));
+  args.push(static_cast<device_scalar>(_pixel_size));
+  args.push(math::to_device_vector4(_min_position));
+  args.push(math::to_device_vector4(_screen_basis_vector0));
+  args.push(math::to_device_vector4(_screen_basis_vector1));
+
+  std::size_t local_size = 16;
+
+  cl::Event generation_finished;
+  cl_int err = ctx->enqueue_ndrange_kernel(coord_generation_kernel,
+                                           cl::NDRange{_num_pixels[0], _num_pixels[1]},
+                                           cl::NDRange{local_size, local_size},
+                                           &generation_finished);
+  qcl::check_cl_error(err, "Could not enqueue "
+                           "camera_generate_pixel_coordinates "
+                           "kernel");
+  err = generation_finished.wait();
+  qcl::check_cl_error(err, "Error while waiting for the "
+                           "camera_generate_pixel_coordinates "
+                           "kernel to finish.");
+}
 
 
 }

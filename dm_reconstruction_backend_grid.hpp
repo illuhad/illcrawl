@@ -29,11 +29,14 @@ namespace illcrawl {
 namespace reconstruction_backends {
 namespace dm {
 
-class grid : public reconstruction_backend
+class grid : virtual public reconstruction_backend
 {
 public:
   grid(const qcl::device_context_ptr& ctx,
-       const H5::DataSet& smoothing_lengths);
+       const H5::DataSet& smoothing_lengths,
+       const std::string& reconstruction_kernel_variant =
+                  "dm_reconstruction_grid_smoothing",
+       std::size_t target_num_particles_per_cell = 64);
 
   virtual std::vector<H5::DataSet> get_required_additional_datasets() const override;
 
@@ -68,6 +71,9 @@ private:
   std::unique_ptr<smoothing_particle_grid> _grid;
 
   device_scalar _maximum_smoothing_length = 0.0f;
+
+  std::string _reconstruction_kernel_name;
+  std::size_t _target_num_particles_per_cell;
 
   static constexpr std::size_t _local_size = 512;
 };
