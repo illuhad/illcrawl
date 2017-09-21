@@ -61,7 +61,7 @@ public:
 
   virtual const unit_converter& get_unit_converter() const = 0;
 
-  virtual bool is_quantity_baryonic() const = 0;
+  virtual bool requires_voronoi_reconstruction() const = 0;
 
 };
 
@@ -99,7 +99,7 @@ public:
     return _converter;
   }
 
-  virtual bool is_quantity_baryonic() const override
+  virtual bool requires_voronoi_reconstruction() const override
   {
     return true;
   }
@@ -608,6 +608,9 @@ public:
   virtual ~potential(){}
 };
 
+/// Represents a dark matter quantity that
+/// relies on particle density based smoothing
+/// reconstruction.
 class dm_quantity : public illustris_quantity
 {
 public:
@@ -616,9 +619,21 @@ public:
              math::scalar dm_particle_mass ) // DM particle mass in 10^10 Msun/h
     : illustris_quantity{data, std::vector<std::string>{}, converter, 1},
       _dm_particle_mass{converter.mass_conversion_factor() * dm_particle_mass}
-  {}
+  {
+    // This converts the reconstructed densities from
+    // X/(ckpc/h)^3 to X/kpc^3 (e.g with X=kg for mass densities)
+    // This is necessary because the DM reconstructors only
+    // see the particle coordinates, which are in ckpc/h and
+    // then reconstruct densities based on that. Consequently,
+    // to transform the result into proper units, the densities
+    // must be multiplied by a correction factor. We absorb this
+    // correction factor into the particle mass, because this
+    // allows the reconstructors to remain agnostic with regard
+    // to the unit system.
+    _dm_particle_mass /=  converter.volume_conversion_factor();
+  }
 
-  virtual bool is_quantity_baryonic() const override
+  virtual bool requires_voronoi_reconstruction() const override
   {
     return false;
   }
@@ -648,7 +663,6 @@ public:
 
 private:
   math::scalar _dm_particle_mass;
-
 };
 
 
@@ -676,8 +690,35 @@ public:
     // mean density
     return 1.0/integration_range;
   }
+};
 
+class dm_mass : public dm_quantity
+{
+public:
+  dm_mass(io::illustris_data_loader* data,
+             const unit_converter& converter,
+             math::scalar dm_particle_mass) // DM particle mass in 10^10 Msun/h
+    : dm_quantity{data, converter, dm_particle_mass}
+  {}
 
+  virtual ~dm_mass(){}
+
+  virtual math::scalar effective_volume_integration_dV(math::scalar dV,
+                                                       math::scalar integration_volume) const override
+  {
+    // mass = integrated density, so we need to return
+    // the proper dV
+    return dV;
+  }
+
+  virtual math::scalar effective_line_of_sight_integration_dA(math::scalar dA,
+                                                              math::scalar integration_range) const override
+  {
+    // mass = integrated density, so we need to return
+    // the proper dA (The dz integration will be handled by the integration
+    // engine)
+    return dA;
+  }
 };
 
 

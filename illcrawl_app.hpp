@@ -89,10 +89,11 @@ public:
   std::unique_ptr<reconstruction_backend>
   create_projective_dm_reconstruction_backend(
       const camera& cam,
-      math::scalar max_integration_depth) const;
+      math::scalar max_integration_depth,
+      const reconstruction_quantity::quantity* q) const;
 
   std::unique_ptr<reconstruction_backend>
-  create_projective_dm_reconstruction_backend() const;
+  create_projective_dm_reconstruction_backend(const reconstruction_quantity::quantity* q) const;
 
   std::size_t get_data_crawling_blocksize() const;
 

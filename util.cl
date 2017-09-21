@@ -33,6 +33,8 @@ __kernel void util_create_sequence(__global unsigned long* output_buffer,
   }
 }
 
+
+
 #define DEFINE_APPLY_PERMUTATION_KERNEL(kernel_name, T)        \
 __kernel void kernel_name(__global T* input_buffer,            \
                           __global T* output_buffer,           \

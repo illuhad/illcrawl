@@ -187,5 +187,11 @@ void camera::generate_pixel_coordinates(const qcl::device_context_ptr &ctx,
                            "kernel to finish.");
 }
 
+math::scalar
+camera::get_pixel_area() const
+{
+  return this->get_pixel_size() * this->get_pixel_size();
+}
+
 
 }

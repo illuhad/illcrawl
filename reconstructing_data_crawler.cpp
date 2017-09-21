@@ -74,7 +74,7 @@ math::vector3 volume_cutout::get_periodic_wraparound_size() const
   return _periodic_wraparound_size;
 }
 
-/**************** Implementation of volumetric_reconstructor *****************/
+/**************** Implementation of reconstructing_data_crawler *****************/
 
 reconstructing_data_crawler::reconstructing_data_crawler(
                          std::unique_ptr<reconstruction_backend> backend,

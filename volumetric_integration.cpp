@@ -72,7 +72,7 @@ volumetric_integration::create_projection(reconstructing_data_crawler& reconstru
   // Finalize results
 
   device_scalar pixel_area =
-      static_cast<device_scalar>(_cam.get_pixel_size() * _cam.get_pixel_size());
+      static_cast<device_scalar>(_cam.get_pixel_area());
 
   device_scalar length_conversion =
       static_cast<device_scalar>(

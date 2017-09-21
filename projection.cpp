@@ -53,7 +53,7 @@ projection::create_projection(reconstructing_data_crawler& reconstruction,
                               const integration::tolerance& integration_tolerance,
                               util::multi_array<device_scalar>& output) const
 {
-  if(reconstructed_quantity.is_quantity_baryonic())
+  if(reconstructed_quantity.requires_voronoi_reconstruction())
   {
     this->project_by_numerical_integration(reconstruction,
                                         reconstructed_quantity,

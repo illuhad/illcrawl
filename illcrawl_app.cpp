@@ -403,7 +403,7 @@ std::unique_ptr<reconstruction_backend>
 illcrawl_app::create_dm_reconstruction_backend(
     const reconstruction_quantity::quantity& q) const
 {
-  assert(!q.is_quantity_baryonic());
+  assert(!q.requires_voronoi_reconstruction());
 
   if(_data_loader->get_current_group_name() != "PartType1")
     _data_loader->select_group(1);
@@ -437,7 +437,7 @@ illcrawl_app::create_dm_reconstruction_backend(
 std::unique_ptr<reconstruction_backend>
 illcrawl_app::create_reconstruction_backend(const reconstruction_quantity::quantity& q) const
 {
-  if(q.is_quantity_baryonic())
+  if(q.requires_voronoi_reconstruction())
     return create_voronoi_reconstruction_backend(q);
   else
     return create_dm_reconstruction_backend(q);
@@ -447,7 +447,8 @@ illcrawl_app::create_reconstruction_backend(const reconstruction_quantity::quant
 std::unique_ptr<reconstruction_backend>
 illcrawl_app::create_projective_dm_reconstruction_backend(
     const camera& cam,
-    math::scalar max_integration_depth) const
+    math::scalar max_integration_depth,
+    const reconstruction_quantity::quantity* q) const
 {
   std::unique_ptr<projective_smoothing_backend> backend;
 
@@ -474,16 +475,18 @@ illcrawl_app::create_projective_dm_reconstruction_backend(
       this->_env.get_compute_device(),
       cam,
       max_integration_depth,
+      q,
       std::move(backend)
     }
   };
 }
 
 std::unique_ptr<reconstruction_backend>
-illcrawl_app::create_projective_dm_reconstruction_backend() const
+illcrawl_app::create_projective_dm_reconstruction_backend(const reconstruction_quantity::quantity* q) const
 {
   return this->create_projective_dm_reconstruction_backend(camera{},
-                                                           1.0);
+                                                           1.0,
+                                                           q);
 }
 
 
@@ -513,7 +516,8 @@ quantity_command_line_parser::register_options(boost::program_options::options_d
        " * mean_density: The mean baryon density along the line of sight [M_sun/kpc^3]\n"
        " * mass: The total baryonic mass along the line of sight [M_sun]\n"
        " * potential: The gravitational potential [(km/s)^2]\n"
-       " * dm_mean_density: The dark matter mean density [M_sun/kpc^3]")
+       " * dm_mean_density: The dark matter mean density [M_sun/kpc^3]\n"
+       " * dm_mass: The dark matter mass [M_sun]")
       ("quantity.xray_spectral_flux.energy",
        boost::program_options::value<math::scalar>(&_xray_spectral_flux_energy)->default_value(
          _xray_spectral_flux_energy),
@@ -712,6 +716,18 @@ quantity_command_line_parser::create_quantity(const illcrawl_app& app) const
 
     return std::unique_ptr<reconstruction_quantity::dm_density>{
       new reconstruction_quantity::dm_density {
+        &(app.get_data_loader()),
+        app.get_unit_converter(),
+        _dm_particle_mass
+      }
+    };
+  }
+  else if(_quantity_selection == "dm_mass")
+  {
+    assert_greater_zero(this->_dm_particle_mass, "Dark matter particle mass must be > 0");
+
+    return std::unique_ptr<reconstruction_quantity::dm_mass>{
+      new reconstruction_quantity::dm_mass {
         &(app.get_data_loader()),
         app.get_unit_converter(),
         _dm_particle_mass

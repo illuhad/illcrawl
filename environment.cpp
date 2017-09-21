@@ -101,12 +101,18 @@ environment::environment(int& argc, char**& argv)
                                            });
   _global_ctx->global_register_source_file("util.cl",
                                            {
-                                             "util_create_sequence"
+                                             "util_create_sequence",
                                            });
   _global_ctx->global_register_source_file("projection.cl",
                                            {
                                              "project_particles",
                                              "project_evaluation_points"
+                                           });
+  _global_ctx->global_register_source_file("math.cl",
+                                           {
+                                             "vector_scale",
+                                             "vector_scale_add",
+                                             "vector_axpy"
                                            });
 
   determine_num_local_processes();

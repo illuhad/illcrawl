@@ -69,6 +69,8 @@ public:
 
   /// \return The size of a pixel (i.e. the side length of the pixel square)
   math::scalar get_pixel_size() const;
+  /// \return The area of a pixel (i.e. \c get_pixel_size()*get_pixel_size())
+  math::scalar get_pixel_area() const;
 
   /// \return The coordinates of the center of the pixel screen
   const math::vector3& get_position() const;

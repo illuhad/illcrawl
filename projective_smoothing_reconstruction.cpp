@@ -28,13 +28,16 @@ projective_smoothing::projective_smoothing(
                      const qcl::device_context_ptr& ctx,
                      const camera& cam,
                      math::scalar max_integration_depth,
+                     const reconstruction_quantity::quantity* q,
                      std::unique_ptr<projective_smoothing_backend>
                                 smoothing_backend)
   : _ctx{ctx},
     _cam{cam},
     _backend{std::move(smoothing_backend)},
-    _max_integration_depth{max_integration_depth}
-{}
+    _max_integration_depth{max_integration_depth},
+    _quantity{q}
+{
+}
 
 
 std::vector<H5::DataSet>
@@ -46,7 +49,39 @@ projective_smoothing::get_required_additional_datasets() const
 const cl::Buffer&
 projective_smoothing::retrieve_results()
 {
-  // ToDo: Multiply by dA
+  device_scalar pixel_area =
+      static_cast<device_scalar>(_cam.get_pixel_area());
+
+  device_scalar length_conversion =
+      static_cast<device_scalar>(
+        _quantity->get_unit_converter().length_conversion_factor());
+
+  device_scalar effective_dA = static_cast<device_scalar>(
+        _quantity->effective_line_of_sight_integration_dA(
+          pixel_area * _quantity->get_unit_converter().area_conversion_factor(),
+          length_conversion * _max_integration_depth));
+
+  // Multiply results by dA and integration length correction
+
+  const cl::Buffer& result = _backend->retrieve_results();
+
+  qcl::kernel_ptr scaling_kernel = _ctx->get_kernel("vector_scale");
+  qcl::kernel_argument_list args{scaling_kernel};
+  args.push(result);
+  args.push(effective_dA);
+  args.push(static_cast<cl_ulong>(this->_num_evaluation_points));
+
+  cl::Event scaling_finished;
+  cl_int err = _ctx->enqueue_ndrange_kernel(scaling_kernel,
+                                            cl::NDRange{_num_evaluation_points},
+                                            cl::NDRange{local_size},
+                                            &scaling_finished);
+  qcl::check_cl_error(err, "Could not enqueue vector_scale kernel");
+  err = scaling_finished.wait();
+  qcl::check_cl_error(err, "Error while waiting for the vector_scale kernel"
+                           " to complete.");
+
+
   return _backend->retrieve_results();
 }
 
@@ -86,6 +121,8 @@ projective_smoothing::setup_evaluation_points(const cl::Buffer& evaluation_point
 {
   this->project_evaluation_points(_cam, evaluation_points, num_points);
   _backend->setup_evaluation_points(evaluation_points, num_points);
+
+  this->_num_evaluation_points = num_points;
 }
 
 void

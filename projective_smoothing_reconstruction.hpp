@@ -24,6 +24,7 @@
 
 #include "projective_smoothing_backend.hpp"
 #include "camera.hpp"
+#include "quantity.hpp"
 
 namespace illcrawl {
 namespace reconstruction_backends {
@@ -36,6 +37,7 @@ public:
   projective_smoothing(const qcl::device_context_ptr& ctx,
                        const camera& cam,
                        math::scalar max_integration_depth,
+                       const reconstruction_quantity::quantity* q,
                        std::unique_ptr<projective_smoothing_backend> smoothing_backend);
 
   virtual std::vector<H5::DataSet> get_required_additional_datasets() const final override;
@@ -69,6 +71,11 @@ private:
   std::unique_ptr<projective_smoothing_backend> _backend;
 
   math::scalar _max_integration_depth;
+
+
+  std::size_t _num_evaluation_points = 0;
+
+  const reconstruction_quantity::quantity* _quantity;
 
   void project_evaluation_points(const camera& cam,
                                  const cl::Buffer& evaluation_points,

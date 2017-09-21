@@ -18,6 +18,9 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#ifndef MATH_CL
+#define MATH_CL
+
 #include "types.cl"
 
 typedef struct
@@ -87,5 +90,41 @@ void matrix3x3_invert(matrix3x3_t* m)
   m->row2 *= inv_detA;
 }
 
+/// x <- alpha*x
+__kernel void vector_scale(__global scalar* x,
+                           scalar alpha,
+                           unsigned long num_elements)
+{
+  size_t tid = get_global_id(0);
+
+  if(tid < num_elements)
+    x[tid] *= alpha;
+}
+
+/// x <- x + alpha*y
+__kernel void vector_scale_add(__global scalar* x,
+                               scalar alpha,
+                               __global scalar* y,
+                               unsigned long num_elements)
+{
+  size_t tid = get_global_id(0);
+
+  if(tid < num_elements)
+    x[tid] += alpha * y[tid];
+}
+
+/// x <- alpha*x + y
+__kernel void vector_axpy(scalar alpha,
+                          __global scalar* x,
+                          __global scalar* y,
+                          unsigned long num_elements)
+{
+  size_t tid = get_global_id(0);
+
+  if(tid < num_elements)
+    x[tid] = alpha*x[tid] + y[tid];
+}
+
+#endif
 
 
