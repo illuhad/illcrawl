@@ -54,8 +54,12 @@ public:
                   std::vector<math::scalar>& out_profile,
                   int root_process = 0);
 
-  const std::vector<math::scalar>& get_profile_radii() const;
+  /// \return The evaluation radii of the profile in proper units
+  std::vector<math::scalar> get_proper_profile_radii() const;
 
+
+  /// \return The evaluation radii of the profile in comoving units
+  const std::vector<math::scalar>& get_comoving_profile_radii() const;
 private:
   /// Generates sample numbers for each radius such
   /// that the error remains roughly constant for each radius.
@@ -117,6 +121,8 @@ private:
   random::random_number_generator _rng;
 
   const std::size_t _max_batch_size = 2000000;
+
+  math::scalar _proper_units_conversion_factor = 1.0;
 };
 
 }

@@ -116,18 +116,23 @@ int main(int argc, char** argv)
     if(app.get_environment().get_communicator().rank() ==
        app.get_environment().get_master_rank())
     {
+      illcrawl::python_plot::figure2d result_plot{output_name};
+
+      result_plot.plot(profile.get_proper_profile_radii(), profile_data);
+      result_plot.set_x_label("$r$ [kpc]");
+      result_plot.save();
+      result_plot.show();
+
       if(display_plot)
       {
-        illcrawl::python_plot::figure2d result_plot{output_name};
-
-        result_plot.plot(profile.get_profile_radii(), profile_data);
-        result_plot.set_x_label("$r$ [ckpc/h]");
-        result_plot.save();
-        result_plot.show();
         result_plot.generate();
       }
+      else
+      {
+        result_plot.generate_script();
+      }
 
-      save_profile(profile.get_profile_radii(), profile_data, output_name+".dat");
+      save_profile(profile.get_proper_profile_radii(), profile_data, output_name+".dat");
     }
   }
   catch(boost::program_options::error& e)

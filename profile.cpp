@@ -67,11 +67,25 @@ distributed_mc_radial_profile::operator()(reconstructing_data_crawler& reconstru
       out_profile,
       root_process);
 
+  this->_proper_units_conversion_factor =
+      reconstructed_quantity.get_unit_converter().length_conversion_factor();
+
 
 }
 
+std::vector<math::scalar>
+distributed_mc_radial_profile::get_proper_profile_radii() const
+{
+  std::vector<math::scalar> result = _radii;
+
+  for(std::size_t i = 0; i < result.size(); ++i)
+    result[i] *= this->_proper_units_conversion_factor;
+
+  return result;
+}
+
 const std::vector<math::scalar>&
-distributed_mc_radial_profile::get_profile_radii() const
+distributed_mc_radial_profile::get_comoving_profile_radii() const
 {
   return _radii;
 }
