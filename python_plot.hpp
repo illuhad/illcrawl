@@ -37,7 +37,7 @@ class basic_figure
 public:
 
   basic_figure(const std::string& identifier)
-    : _id{identifier}, _script_name{"plot_" + identifier + ".py"},
+    : _id{identifier}, _script_name{identifier + "_plot.py"},
       _num_data_arrays{0}
   {
     _header = "import numpy as np\n"

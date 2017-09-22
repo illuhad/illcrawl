@@ -18,6 +18,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <vector>
@@ -30,23 +31,46 @@
 #include "reconstructing_data_crawler.hpp"
 #include "uniform_work_partitioner.hpp"
 
+void save_profile(const std::vector<illcrawl::math::scalar>& radii,
+                  const std::vector<illcrawl::math::scalar>& profile,
+                  const std::string& filename)
+{
+  assert(radii.size() == profile.size());
+
+  std::ofstream output_file(filename);
+
+  if(output_file.is_open())
+  {
+    output_file << "# Radius [kpc]\t Quantity" << std::endl;
+
+    for(std::size_t i = 0; i < radii.size(); ++i)
+    {
+      output_file << radii[i] << "\t" << profile[i] << std::endl;
+    }
+  }
+}
+
 int main(int argc, char** argv)
 {
-  std::string plot_name;
+  std::string output_name;
   unsigned num_radii;
   illcrawl::math::scalar sampling_density;
+  bool display_plot = false;
 
   boost::program_options::options_description options;
   options.add_options()
       ("output,o",
-       boost::program_options::value<std::string>(&plot_name)->default_value("cluster_analysis"),
+       boost::program_options::value<std::string>(&output_name)->default_value("cluster_analysis"),
        "the name of the output plot (without file extension)")
       ("num_radii,n",
        boost::program_options::value<unsigned>(&num_radii)->default_value(100),
        "The number of sampled radii")
       ("mean_sampling_density,s",
        boost::program_options::value<illcrawl::math::scalar>(&sampling_density)->default_value(5.e-4),
-       "the mean sampling density in units of 1/(ckpc/h)^3");
+       "the mean sampling density in units of 1/(ckpc/h)^3")
+      ("display_plot,p", boost::program_options::bool_switch(&display_plot),
+             "Automatically display plot (The plot script will "
+             "always be created for later use)");;
 
 
   illcrawl::quantity_command_line_parser quantity_parser;
@@ -92,13 +116,18 @@ int main(int argc, char** argv)
     if(app.get_environment().get_communicator().rank() ==
        app.get_environment().get_master_rank())
     {
-      illcrawl::python_plot::figure2d result_plot{plot_name};
+      if(display_plot)
+      {
+        illcrawl::python_plot::figure2d result_plot{output_name};
 
-      result_plot.plot(profile.get_profile_radii(), profile_data);
-      result_plot.set_x_label("$r$ [ckpc/h]");
-      result_plot.save();
-      result_plot.show();
-      result_plot.generate();
+        result_plot.plot(profile.get_profile_radii(), profile_data);
+        result_plot.set_x_label("$r$ [ckpc/h]");
+        result_plot.save();
+        result_plot.show();
+        result_plot.generate();
+      }
+
+      save_profile(profile.get_profile_radii(), profile_data, output_name+".dat");
     }
   }
   catch(boost::program_options::error& e)
