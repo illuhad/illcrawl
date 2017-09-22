@@ -57,19 +57,23 @@ public:
   const std::vector<math::scalar>& get_profile_radii() const;
 
 private:
-  void run(const std::vector<math::scalar>& sampling_densities,
+  /// Generates sample numbers for each radius such
+  /// that the error remains roughly constant for each radius.
+  /// Since the error E scales with V/sqrt(N), it follows that the sample
+  /// number N ~ V^2
+  void generate_num_samples(std::vector<std::size_t>& num_samples,
+                            math::scalar mean_density) const;
+
+  void run(const std::vector<std::size_t>& num_samples,
            reconstructing_data_crawler& reconstructor,
            const reconstruction_quantity::quantity& reconstructed_quantity,
            std::vector<math::scalar>& result,
-           std::vector<std::size_t>& overall_sample_counter,
            int root_process);
 
   void apply_volume_factor(const std::vector<std::size_t>& global_num_samples,
                            const reconstruction_quantity::quantity& reconstructed_quantity,
                            std::vector<math::scalar>& out_profile) const;
 
-  std::size_t estimate_num_samples(const std::vector<math::scalar>& sampling_densities,
-                                   std::vector<std::size_t>& samples_for_shell) const;
 
   void create_samples(const std::vector<std::size_t>& num_samples);
 
@@ -97,7 +101,7 @@ private:
 
   unsigned _num_radii;
   std::vector<math::scalar> _radii;
-  std::vector<math::scalar> _profile;
+  std::vector<math::scalar> _profile_sum_state;
   std::vector<device_vector4> _sample_points;
 
 

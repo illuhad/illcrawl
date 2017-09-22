@@ -33,7 +33,7 @@ distributed_mc_radial_profile::distributed_mc_radial_profile(
     _profile_center{profile_center},
     _max_radius{max_radius},
     _num_radii{num_radii},
-    _profile(num_radii, 0),
+    _profile_sum_state(num_radii, 0),
     _partitioning{std::move(partitioner.clone())}
 {
   assert(ctx != nullptr);
@@ -51,58 +51,22 @@ distributed_mc_radial_profile::operator()(reconstructing_data_crawler& reconstru
                                           std::vector<math::scalar>& out_profile,
                                           int root_process)
 {
-  std::fill(_profile.begin(), _profile.end(), 0.0);
+  std::fill(_profile_sum_state.begin(), _profile_sum_state.end(), 0.0);
   out_profile = std::vector<math::scalar>(_radii.size(), 0);
 
   reconstructor.purge_state();
 
-  std::vector<std::size_t> overall_num_samples;
+  std::vector<std::size_t> num_samples;
+  // Calculate the number of required samples
+  // for each shell to achieve the given mean density
+  this->generate_num_samples(num_samples, sample_density);
 
-  run(std::vector<math::scalar>(_radii.size(), sample_density),
+  run(num_samples,
       reconstructor,
       reconstructed_quantity,
       out_profile,
-      overall_num_samples,
       root_process);
 
-  std::cout << "Redistributing samples..." << std::endl;
-  // redo calculation and redistribute samples according to out_profile
-  std::vector<math::scalar> sample_densities(_radii.size(), sample_density);
-
-  // After the first run, overall_num_samples will contain the sample
-  // number of exactly one run. The number of samples we want to generate
-  // for each run is therefore given by the sum of all elements
-  // in overall_num_samples.
-  std::size_t samples_per_run = std::accumulate(overall_num_samples.begin(),
-                                                overall_num_samples.end(), 0);
-
-  if(_partitioning->get_communicator().rank() == root_process)
-  {
-    // normalize out_profile
-    math::scalar norm = std::accumulate(out_profile.begin(), out_profile.end(), 0.0);
-    if(norm == 0)
-      return;
-
-    assert(out_profile.size() == _radii.size());
-    for(std::size_t i = 0; i < _radii.size(); ++i)
-    {
-      //math::scalar weight = out_profile[i] * samples_per_run / norm;
-      math::scalar shell_volume = get_shell_volume(i);
-      std::size_t num_samples = out_profile[i] * samples_per_run / norm;
-      sample_densities[i] = num_samples / shell_volume;
-    }
-  }
-
-  // broadcast densities to all processes
-  boost::mpi::broadcast(_partitioning->get_communicator(), sample_densities, root_process);
-
-
-  run(sample_densities,
-      reconstructor,
-      reconstructed_quantity,
-      out_profile,
-      overall_num_samples,
-      root_process);
 
 }
 
@@ -112,47 +76,73 @@ distributed_mc_radial_profile::get_profile_radii() const
   return _radii;
 }
 
+void
+distributed_mc_radial_profile::generate_num_samples(std::vector<std::size_t>& num_samples,
+                                                    math::scalar mean_density) const
+{
+  assert(_radii.size() > 0);
+
+  num_samples = std::vector<std::size_t>(_radii.size());
+
+  std::vector<math::scalar> sampling_scaling(_radii.size());
+
+  for(std::size_t i = 0; i < _radii.size(); ++i)
+  {
+    math::scalar V = this->get_shell_volume(i);
+    sampling_scaling[i] = V*V;
+  }
+
+  // Calculate normalization
+  math::scalar expected_num_samples = 0;
+  for(std::size_t i = 0; i < _radii.size(); ++i)
+    expected_num_samples += this->get_shell_volume(i) * mean_density;
+
+  math::scalar norm = static_cast<math::scalar>(expected_num_samples) /
+                      std::accumulate(sampling_scaling.begin(),
+                                      sampling_scaling.end(),
+                                      0.0);
+
+
+  // Normalize and set result
+  for(std::size_t i = 0; i < _radii.size(); ++i)
+  {
+    num_samples[i] = static_cast<std::size_t>(norm * sampling_scaling[i]);
+    if(num_samples[i] == 0)
+      num_samples[i] = 1;
+  }
+}
+
 
 void
-distributed_mc_radial_profile::run(const std::vector<math::scalar>& sampling_densities,
+distributed_mc_radial_profile::run(const std::vector<std::size_t>& num_samples,
                                    reconstructing_data_crawler& reconstructor,
                                    const reconstruction_quantity::quantity& reconstructed_quantity,
                                    std::vector<math::scalar>& result,
-                                   std::vector<std::size_t>& overall_sample_counter,
                                    int root_process)
 {
-  result.resize(_sample_points.size());
+  result.resize(_radii.size());
   std::fill(result.begin(), result.end(), 0.0);
 
-  assert(sampling_densities.size() == _radii.size());
-
-  // Make sure overall_num_samples has the right size if
-  // this is the first call to run
-  overall_sample_counter.resize(_radii.size(), 0.0);
-
-  std::vector<std::size_t> total_samples_for_shell;
-  std::size_t total_num_samples = estimate_num_samples(sampling_densities,
-                                                       total_samples_for_shell);
+  assert(num_samples.size() == _radii.size());
 
   for(std::size_t i = 0; i < _radii.size(); ++i)
   {
     // Make sure each shell is sampled at least once
     // to prevent NaNs when dividing by the sample count
     // later on.
-    if(total_samples_for_shell[i] == 0)
-      total_samples_for_shell[i] = 1;
-    // Add total_num_samples of this function call to the overall sample number counter
-    overall_sample_counter[i] += total_samples_for_shell[i];
+    assert(num_samples[i] > 0);
   }
-
+  std::size_t total_num_samples = std::accumulate(num_samples.begin(),
+                                                  num_samples.end(),
+                                                  0);
 
   std::cout << "Total samples: " << total_num_samples << std::endl;
 
-  // Determine local number of samples
-  std::vector<std::size_t> local_number_of_samples;
 
   _partitioning->run(total_num_samples);
 
+  // Determine local number of samples
+  std::vector<std::size_t> local_num_samples;
   std::size_t num_local_jobs = _partitioning->get_num_local_jobs();
 
   std::size_t global_sample_id = 0;
@@ -160,16 +150,16 @@ distributed_mc_radial_profile::run(const std::vector<math::scalar>& sampling_den
   {
     // Calculate the intersection between the intervals
     // [partitioning.own_begin, partitioning.own_end]
-    // and [global_sample_id, global_sample_id + total_samples_for_shell[i]]
-    std::size_t interval_end = std::min(_partitioning->own_end(), global_sample_id + total_samples_for_shell[i]);
+    // and [global_sample_id, global_sample_id + num_samples[i]]
+    std::size_t interval_end = std::min(_partitioning->own_end(), global_sample_id + num_samples[i]);
     std::size_t interval_begin = std::max(_partitioning->own_begin(), global_sample_id);
     std::size_t local_samples_for_shell = 0;
     if(interval_end > interval_begin)
       local_samples_for_shell = interval_end - interval_begin;
 
-    local_number_of_samples.push_back(local_samples_for_shell);
+    local_num_samples.push_back(local_samples_for_shell);
 
-    global_sample_id += total_samples_for_shell[i];
+    global_sample_id += num_samples[i];
   }
 
   // Split the calculation into several batches
@@ -182,15 +172,15 @@ distributed_mc_radial_profile::run(const std::vector<math::scalar>& sampling_den
   std::vector<device_scalar> evaluated_samples;
   for(std::size_t batch_id = 0; batch_id < num_batches; ++batch_id)
   {
-    std::vector<std::size_t> num_samples_for_batch = local_number_of_samples;
+    std::vector<std::size_t> num_samples_for_batch = local_num_samples;
     for(std::size_t i = 0; i < num_samples_for_batch.size(); ++i)
     {
       if(batch_id == num_batches - 1)
       {
         // Assign all remaining samples to the last batch (fixes truncation errors)
-        assert(local_number_of_samples[i] >= (local_number_of_samples[i] / num_batches) * batch_id);
-        num_samples_for_batch[i] = local_number_of_samples[i]
-            - (local_number_of_samples[i] / num_batches) * batch_id;
+        assert(local_num_samples[i] >= (local_num_samples[i] / num_batches) * batch_id);
+        num_samples_for_batch[i] = local_num_samples[i]
+            - (local_num_samples[i] / num_batches) * batch_id;
       }
       else
         num_samples_for_batch[i] /= num_batches;
@@ -199,7 +189,9 @@ distributed_mc_radial_profile::run(const std::vector<math::scalar>& sampling_den
     std::cout << "Number of samples in batch: "
               << std::accumulate(num_samples_for_batch.begin(), num_samples_for_batch.end(), 0)
               << std::endl;
-    // Finally we can actually create the samples
+    // Finally we can actually create the samples. This creates
+    // the samples and fills \c _first_sample_id_for_shell with
+    // the offsets where samples for the shells begin
     create_samples(num_samples_for_batch);
     // ...and evaluate them
     evaluate_samples(reconstructor, reconstructed_quantity, evaluated_samples);
@@ -215,14 +207,14 @@ distributed_mc_radial_profile::run(const std::vector<math::scalar>& sampling_den
       assert(sample_points_end >= sample_points_begin);
 
       for(std::size_t sample = sample_points_begin; sample < sample_points_end; ++sample)
-        _profile[shell] += static_cast<math::scalar>(evaluated_samples[sample]);
+        _profile_sum_state[shell] += static_cast<math::scalar>(evaluated_samples[sample]);
     }
 
     retrieve_global_profile(result, root_process);
     // Apply dV factor on root process
     if(_partitioning->get_communicator().rank() == root_process)
     {
-      apply_volume_factor(overall_sample_counter, reconstructed_quantity, result);
+      apply_volume_factor(num_samples, reconstructed_quantity, result);
     }
   }
 }
@@ -247,20 +239,7 @@ distributed_mc_radial_profile::apply_volume_factor(const std::vector<std::size_t
 
 }
 
-std::size_t
-distributed_mc_radial_profile::estimate_num_samples(const std::vector<math::scalar>& sampling_densities,
-                                                    std::vector<std::size_t>& samples_for_shell) const
-{
-  samples_for_shell.clear();
 
-  for(std::size_t i = 0; i < sampling_densities.size(); ++i)
-    samples_for_shell.push_back(sampling_densities[i] * get_shell_volume(i));
-
-  std::size_t total_num_samples = std::accumulate(samples_for_shell.begin(),
-                                                  samples_for_shell.end(),
-                                                  0);
-  return total_num_samples;
-}
 
 void
 distributed_mc_radial_profile::create_samples(const std::vector<std::size_t>& num_samples)
@@ -318,7 +297,7 @@ void
 distributed_mc_radial_profile::retrieve_global_profile(std::vector<math::scalar>& out, int root_process)
 {
   boost::mpi::reduce(_partitioning->get_communicator(),
-                     _profile,
+                     _profile_sum_state,
                      out,
                      std::plus<math::scalar>(),
                      root_process);
