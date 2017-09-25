@@ -156,8 +156,8 @@ void reconstructing_data_crawler::run(
   {
     reconstruction_quantity::quantity_transformation transformation{
       _ctx,
-          quantity_to_reconstruct,
-          _blocksize
+      quantity_to_reconstruct,
+      _blocksize
     };
 
     io::buffer_accessor<math::scalar> access = streamer.create_buffer_accessor();

@@ -82,7 +82,8 @@ environment::environment(int& argc, char**& argv)
                                              "chandra_xray_total_count_rate",
                                              "chandra_xray_spectral_count_rate",
                                              "unprocessed_quantity",
-                                             "constant_quantity"
+                                             "constant_quantity",
+                                             "stellar_mass"
                                            });
   _global_ctx->global_register_source_file("integration.cl",
                                            {

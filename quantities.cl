@@ -725,5 +725,28 @@ __kernel void constant_quantity(__global scalar* out,
   }
 }
 
+/// Sets the output to the stellar mass, if the particle
+/// is a star, or to 0 if it is a wind cell.
+/// \param out output. Must be allocated to hold at least \c num_elements
+/// data elements.
+/// \param num_elements The number of elements
+/// \param stellar_formation_time The illustris field GFM_StellarFormationTime.
+/// This will only be used to determine if a data element is a star or a wind cell
+/// \param The masses in M_sun
+__kernel void stellar_mass(__global scalar* out,
+                           unsigned num_elements,
+                           __global scalar* stellar_formation_time,
+                           __global scalar* masses)
+{
+  int tid = get_global_id(0);
+
+  if(tid < num_elements)
+  {
+    if(stellar_formation_time[tid] > 0.0f)
+      out[tid] = masses[tid];
+    else
+      out[tid] = 0.0f;
+  }
+}
 
 #endif

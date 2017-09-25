@@ -131,7 +131,7 @@ void run(const illcrawl::illcrawl_app& app,
     app.output_stream() << "Starting volumetric/integrative projection..." << std::endl;
 
     if(!quantity->requires_voronoi_reconstruction())
-      reconstructor.set_backend(app.create_projective_dm_reconstruction_backend(quantity.get()));
+      reconstructor.set_backend(app.create_projective_smoothing_reconstruction_backend(quantity.get()));
 
     illcrawl::projection integrator{
       app.get_environment().get_compute_device(),
@@ -189,7 +189,7 @@ void run(const illcrawl::illcrawl_app& app,
   else if(options.render_target == "animation")
   {
     if(!quantity->requires_voronoi_reconstruction())
-      reconstructor.set_backend(app.create_projective_dm_reconstruction_backend(quantity.get()));
+      reconstructor.set_backend(app.create_projective_smoothing_reconstruction_backend(quantity.get()));
 
     camera_name = "camera_frame0";
     app.output_stream() << "Starting animation..." << std::endl;

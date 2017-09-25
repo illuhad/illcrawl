@@ -87,13 +87,13 @@ public:
   create_reconstruction_backend(const reconstruction_quantity::quantity& q) const;
 
   std::unique_ptr<reconstruction_backend>
-  create_projective_dm_reconstruction_backend(
+  create_projective_smoothing_reconstruction_backend(
       const camera& cam,
       math::scalar max_integration_depth,
       const reconstruction_quantity::quantity* q) const;
 
   std::unique_ptr<reconstruction_backend>
-  create_projective_dm_reconstruction_backend(const reconstruction_quantity::quantity* q) const;
+  create_projective_smoothing_reconstruction_backend(const reconstruction_quantity::quantity* q) const;
 
   std::size_t get_data_crawling_blocksize() const;
 
@@ -102,7 +102,7 @@ private:
   create_voronoi_reconstruction_backend(const reconstruction_quantity::quantity& q) const;
 
   std::unique_ptr<reconstruction_backend>
-  create_dm_reconstruction_backend(const reconstruction_quantity::quantity& q) const;
+  create_smoothing_reconstruction_backend(const reconstruction_quantity::quantity& q) const;
 
   void save_length_scalar_to_fits_header(util::fits_header* header,
                                          const std::string& parent_key,
@@ -148,8 +148,8 @@ private:
 
 
   std::string _voronoi_reconstructor = "nn8";
-  std::string _dm_reconstructor = "grid";
-  std::string _dm_projective_reconstructor = "grid";
+  std::string _smoothing_reconstructor = "grid";
+  std::string _projective_smoothing_reconstructor = "grid";
   math::scalar _tree_opening_angle = 0.4;
 
   std::size_t _data_crawling_blocksize = 40000000;

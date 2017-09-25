@@ -62,14 +62,14 @@ illcrawl_app::illcrawl_app(int& argc,
       ("reconstructor.voronoi.tree.opening_angle",
        boost::program_options::value<math::scalar>(&_tree_opening_angle)->default_value(_tree_opening_angle),
        "The opening angle of the tree reconstructor.")
-      ("reconstructor.dm",
-       boost::program_options::value<std::string>(&_dm_reconstructor)->default_value(_dm_reconstructor),
-       "The reconstructor used for quantities that rely on Dark Matter particles. Supported reconstructors:\n"
+      ("reconstructor.smoothing",
+       boost::program_options::value<std::string>(&_smoothing_reconstructor)->default_value(_smoothing_reconstructor),
+       "The reconstructor used for quantities that rely on particle smoothing (e.g. Dark Matter). Supported reconstructors:\n"
        " * brute_force\n"
        " * grid")
-      ("reconstructor.dm.projective",
-       boost::program_options::value<std::string>(&_dm_projective_reconstructor)->default_value(_dm_projective_reconstructor),
-       "The projective reconstructor used to project DM quantities. Supported reconstructors:\n"
+      ("reconstructor.smoothing.projective",
+       boost::program_options::value<std::string>(&_projective_smoothing_reconstructor)->default_value(_projective_smoothing_reconstructor),
+       "The projective reconstructor used to project smoothed quantities. Supported reconstructors:\n"
        " * grid")
       ("data_crawler.blocksize",
        boost::program_options::value<std::size_t>(&_data_crawling_blocksize)->default_value(_data_crawling_blocksize),
@@ -241,9 +241,9 @@ illcrawl_app::save_settings_to_fits(util::fits_header* header) const
   header->add_entry("renderer.voronoi_reconstructor",
                     this->_voronoi_reconstructor);
   header->add_entry("renderer.dm_reconstructor",
-                    this->_dm_reconstructor);
+                    this->_smoothing_reconstructor);
   header->add_entry("renderer.dm_projective_reconstructor",
-                    this->_dm_projective_reconstructor);
+                    this->_projective_smoothing_reconstructor);
   header->add_entry("renderer.partitioner","uniform","The parallel work partitioning strategy");
   header->add_entry("data_crawler.blocksize",
                     static_cast<unsigned long long>(_data_crawling_blocksize),
@@ -400,7 +400,7 @@ illcrawl_app::create_voronoi_reconstruction_backend(
 }
 
 std::unique_ptr<reconstruction_backend>
-illcrawl_app::create_dm_reconstruction_backend(
+illcrawl_app::create_smoothing_reconstruction_backend(
     const reconstruction_quantity::quantity& q) const
 {
   assert(!q.requires_voronoi_reconstruction());
@@ -411,7 +411,7 @@ illcrawl_app::create_dm_reconstruction_backend(
   std::string dm_smoothing_length_id =
       io::illustris_data_loader::get_dm_smoothing_length_identifier();
 
-  if(this->_dm_reconstructor == "brute_force")
+  if(this->_smoothing_reconstructor == "brute_force")
   {
     return std::unique_ptr<reconstruction_backend>{
       new reconstruction_backends::dm::brute_force{
@@ -420,7 +420,7 @@ illcrawl_app::create_dm_reconstruction_backend(
       }
     };
   }
-  else if(this->_dm_reconstructor == "grid")
+  else if(this->_smoothing_reconstructor == "grid")
   {
     return std::unique_ptr<reconstruction_backend>{
       new reconstruction_backends::dm::grid{
@@ -430,7 +430,7 @@ illcrawl_app::create_dm_reconstruction_backend(
     };
   }
   else
-    throw std::invalid_argument{"Unknown dark matter reconstructor: "+_dm_reconstructor};
+    throw std::invalid_argument{"Unknown dark matter reconstructor: "+_smoothing_reconstructor};
 }
 
 
@@ -440,34 +440,39 @@ illcrawl_app::create_reconstruction_backend(const reconstruction_quantity::quant
   if(q.requires_voronoi_reconstruction())
     return create_voronoi_reconstruction_backend(q);
   else
-    return create_dm_reconstruction_backend(q);
+    return create_smoothing_reconstruction_backend(q);
 }
 
 
 std::unique_ptr<reconstruction_backend>
-illcrawl_app::create_projective_dm_reconstruction_backend(
+illcrawl_app::create_projective_smoothing_reconstruction_backend(
     const camera& cam,
     math::scalar max_integration_depth,
     const reconstruction_quantity::quantity* q) const
 {
   std::unique_ptr<projective_smoothing_backend> backend;
 
+  using illustris_quantity_ptr = const reconstruction_quantity::illustris_quantity*;
+  illustris_quantity_ptr casted_quantity = nullptr;
 
-  if(_data_loader->get_current_group_name() != "PartType1")
-    _data_loader->select_group(1);
-  std::string dm_smoothing_length_id =
+  if((casted_quantity = dynamic_cast<illustris_quantity_ptr>(q)) != nullptr)
+    if(_data_loader->get_current_group_name() !=
+        ("PartType"+std::to_string(casted_quantity->get_particle_type_id())))
+    _data_loader->select_group(casted_quantity->get_particle_type_id());
+
+  std::string smoothing_length_dataset_id =
       io::illustris_data_loader::get_dm_smoothing_length_identifier();
 
-  if(this->_dm_projective_reconstructor == "grid")
+  if(this->_projective_smoothing_reconstructor == "grid")
   {
     backend.reset(new reconstruction_backends::dm::projective_smoothing_grid{
                     _env.get_compute_device(),
-                    _data_loader->get_dataset(dm_smoothing_length_id)
+                    _data_loader->get_dataset(smoothing_length_dataset_id)
                   });
   }
   else
-    throw std::invalid_argument{"Unknown DM projective reconstruction backend: "+
-                                this->_dm_projective_reconstructor};
+    throw std::invalid_argument{"Unknown projective smoothing reconstruction backend: "+
+                                this->_projective_smoothing_reconstructor};
 
 
   return std::unique_ptr<reconstruction_backend>{
@@ -482,9 +487,9 @@ illcrawl_app::create_projective_dm_reconstruction_backend(
 }
 
 std::unique_ptr<reconstruction_backend>
-illcrawl_app::create_projective_dm_reconstruction_backend(const reconstruction_quantity::quantity* q) const
+illcrawl_app::create_projective_smoothing_reconstruction_backend(const reconstruction_quantity::quantity* q) const
 {
-  return this->create_projective_dm_reconstruction_backend(camera{},
+  return this->create_projective_smoothing_reconstruction_backend(camera{},
                                                            1.0,
                                                            q);
 }
@@ -517,7 +522,9 @@ quantity_command_line_parser::register_options(boost::program_options::options_d
        " * mass: The total baryonic mass along the line of sight [M_sun]\n"
        " * potential: The gravitational potential [(km/s)^2]\n"
        " * dm_mean_density: The dark matter mean density [M_sun/kpc^3]\n"
-       " * dm_mass: The dark matter mass [M_sun]")
+       " * dm_mass: The dark matter mass [M_sun]\n"
+       " * stellar_mean_density: The stellar mean density [M_sun/kpc^3]\n"
+       " * stellar_mass: The stellar mass [M_sun]")
       ("quantity.xray_spectral_flux.energy",
        boost::program_options::value<math::scalar>(&_xray_spectral_flux_energy)->default_value(
          _xray_spectral_flux_energy),
@@ -731,6 +738,24 @@ quantity_command_line_parser::create_quantity(const illcrawl_app& app) const
         &(app.get_data_loader()),
         app.get_unit_converter(),
         _dm_particle_mass
+      }
+    };
+  }
+  else if(_quantity_selection == "stellar_mean_density")
+  {
+    return std::unique_ptr<reconstruction_quantity::stellar_density>{
+      new reconstruction_quantity::stellar_density{
+        &(app.get_data_loader()),
+        app.get_unit_converter()
+      }
+    };
+  }
+  else if(_quantity_selection == "stellar_mass")
+  {
+    return std::unique_ptr<reconstruction_quantity::stellar_mass>{
+      new reconstruction_quantity::stellar_mass{
+        &(app.get_data_loader()),
+        app.get_unit_converter()
       }
     };
   }

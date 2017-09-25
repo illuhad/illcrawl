@@ -103,6 +103,11 @@ public:
   {
     return true;
   }
+
+  std::size_t get_particle_type_id() const
+  {
+    return _particle_type_id;
+  }
 private:
   io::illustris_data_loader* _data;
   std::vector<std::string> _dataset_identifiers;
@@ -660,7 +665,6 @@ public:
     return _dm_particle_mass;
   }
 
-
 private:
   math::scalar _dm_particle_mass;
 };
@@ -721,6 +725,110 @@ public:
   }
 };
 
+
+/// Represents a stellar matter quantity that
+/// relies on particle density based smoothing
+/// reconstruction (similar to Dark Matter reconstructions)
+class stellar_quantity : public illustris_quantity
+{
+public:
+  stellar_quantity(io::illustris_data_loader* data,
+                   const unit_converter& converter,
+                   const std::vector<std::string> dataset_names)
+    : illustris_quantity{data, dataset_names, converter, 4},
+      // This conversion factor converts the mass into proper units
+      // and also takes care that reconstructed densities are in
+      // proper units.
+      _mass_conversion_factor{converter.mass_conversion_factor() /
+                              converter.volume_conversion_factor()}
+  {
+  }
+
+  virtual bool requires_voronoi_reconstruction() const final override
+  {
+    return false;
+  }
+
+  virtual ~stellar_quantity(){}
+
+
+  math::scalar get_mass_conversion_factor() const
+  {
+    return _mass_conversion_factor;
+  }
+
+private:
+  math::scalar _mass_conversion_factor;
+};
+
+class stellar_density : public stellar_quantity
+{
+public:
+  stellar_density(io::illustris_data_loader* data,
+                   const unit_converter& converter)
+    : stellar_quantity{
+        data,
+        converter,
+        std::vector<std::string>{
+          "GFM_StellarFormationTime", // necessary to determine if a particle is a star
+                                      // or wind cell
+          "Masses"
+        }
+      }
+  {}
+
+  virtual ~stellar_density(){}
+
+  virtual qcl::kernel_ptr get_kernel(const qcl::device_context_ptr &ctx) const override
+  {
+    return ctx->get_kernel("stellar_mass");
+  }
+
+  virtual std::vector<math::scalar> get_quantitiy_scaling_factors() const override
+  {
+    return std::vector<math::scalar>{1.0, this->get_mass_conversion_factor()};
+  }
+
+  virtual math::scalar effective_volume_integration_dV(math::scalar dV,
+                                                       math::scalar integration_volume) const override
+  {
+    // mean density
+    return dV / integration_volume;
+  }
+
+  virtual math::scalar effective_line_of_sight_integration_dA(math::scalar dA,
+                                                              math::scalar integration_range) const override
+  {
+    // mean density
+    return 1.0/integration_range;
+  }
+};
+
+class stellar_mass : public stellar_density
+{
+public:
+  stellar_mass(io::illustris_data_loader* data,
+               const unit_converter& converter)
+    : stellar_density{
+        data,
+        converter
+      }
+  {}
+
+  virtual ~stellar_mass(){}
+
+  virtual math::scalar effective_volume_integration_dV(math::scalar dV,
+                                                       math::scalar integration_volume) const override
+  {
+    return dV;
+  }
+
+  virtual math::scalar effective_line_of_sight_integration_dA(math::scalar dA,
+                                                              math::scalar integration_range) const override
+  {
+    return dA;
+  }
+};
 
 
 class quantity_transformation
