@@ -405,8 +405,7 @@ illcrawl_app::create_smoothing_reconstruction_backend(
 {
   assert(!q.requires_voronoi_reconstruction());
 
-  if(_data_loader->get_current_group_name() != "PartType1")
-    _data_loader->select_group(1);
+  this->open_datagroup_for_quantity(q);
 
   std::string dm_smoothing_length_id =
       io::illustris_data_loader::get_dm_smoothing_length_identifier();
@@ -452,13 +451,7 @@ illcrawl_app::create_projective_smoothing_reconstruction_backend(
 {
   std::unique_ptr<projective_smoothing_backend> backend;
 
-  using illustris_quantity_ptr = const reconstruction_quantity::illustris_quantity*;
-  illustris_quantity_ptr casted_quantity = nullptr;
-
-  if((casted_quantity = dynamic_cast<illustris_quantity_ptr>(q)) != nullptr)
-    if(_data_loader->get_current_group_name() !=
-        ("PartType"+std::to_string(casted_quantity->get_particle_type_id())))
-    _data_loader->select_group(casted_quantity->get_particle_type_id());
+  this->open_datagroup_for_quantity(*q);
 
   std::string smoothing_length_dataset_id =
       io::illustris_data_loader::get_dm_smoothing_length_identifier();
@@ -484,6 +477,18 @@ illcrawl_app::create_projective_smoothing_reconstruction_backend(
       std::move(backend)
     }
   };
+}
+
+void
+illcrawl_app::open_datagroup_for_quantity(const reconstruction_quantity::quantity& q) const
+{
+  using illustris_quantity_ptr = const reconstruction_quantity::illustris_quantity*;
+  illustris_quantity_ptr casted_quantity = nullptr;
+
+  if((casted_quantity = dynamic_cast<illustris_quantity_ptr>(&q)) != nullptr)
+    if(_data_loader->get_current_group_name() !=
+        ("PartType"+std::to_string(casted_quantity->get_particle_type_id())))
+    _data_loader->select_group(casted_quantity->get_particle_type_id());
 }
 
 std::unique_ptr<reconstruction_backend>

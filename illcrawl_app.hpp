@@ -104,6 +104,8 @@ private:
   std::unique_ptr<reconstruction_backend>
   create_smoothing_reconstruction_backend(const reconstruction_quantity::quantity& q) const;
 
+  void open_datagroup_for_quantity(const reconstruction_quantity::quantity& q) const;
+
   void save_length_scalar_to_fits_header(util::fits_header* header,
                                          const std::string& parent_key,
                                          const std::string& key,
