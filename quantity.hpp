@@ -613,6 +613,51 @@ public:
   virtual ~potential(){}
 };
 
+
+/// The gas metallicity in units of solar metallicities
+class metallicity : public illustris_quantity
+{
+public:
+  metallicity(io::illustris_data_loader* data,
+              const unit_converter& converter)
+      : illustris_quantity{
+          data,
+          std::vector<std::string>{
+            "GFM_Metallicity "
+          },
+          converter
+        }
+  {}
+
+  virtual qcl::kernel_ptr get_kernel(const qcl::device_context_ptr &ctx) const override
+  {
+    return ctx->get_kernel("unprocessed_quantity");
+  }
+
+  virtual std::vector<math::scalar> get_quantitiy_scaling_factors() const override
+  {
+    return std::vector<math::scalar>{{
+        1.0 / 0.0127 // divide by the solar metallicity to obtain the result in units of solar metallicities
+    }};
+  }
+
+  virtual math::scalar effective_volume_integration_dV(math::scalar dV,
+                                                       math::scalar integration_volume) const override
+  {
+    // mean metallicity
+    return dV / integration_volume;
+  }
+
+  virtual math::scalar effective_line_of_sight_integration_dA(math::scalar dA,
+                                                              math::scalar integration_range) const override
+  {
+    // mean metallicity along line of sight
+    return 1.0 / integration_range;
+  }
+
+  virtual ~metallicity(){}
+};
+
 /// Represents a dark matter quantity that
 /// relies on particle density based smoothing
 /// reconstruction.

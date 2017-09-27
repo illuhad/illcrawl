@@ -526,6 +526,7 @@ quantity_command_line_parser::register_options(boost::program_options::options_d
        " * mean_density: The mean baryon density along the line of sight [M_sun/kpc^3]\n"
        " * mass: The total baryonic mass along the line of sight [M_sun]\n"
        " * potential: The gravitational potential [(km/s)^2]\n"
+       " * metallicity: M_Z/M_total, i.e. the metal mass divided by the total mass [solar metallicities]\n"
        " * dm_mean_density: The dark matter mean density [M_sun/kpc^3]\n"
        " * dm_mass: The dark matter mass [M_sun]\n"
        " * stellar_mean_density: The stellar mean density [M_sun/kpc^3]\n"
@@ -719,6 +720,15 @@ quantity_command_line_parser::create_quantity(const illcrawl_app& app) const
             app.get_luminosity_distance(),
             _luminosity_weighted_temp_min_energy,
             _luminosity_weighted_temp_max_energy
+      }
+    };
+  }
+  else if(_quantity_selection == "metallicity")
+  {
+    return std::unique_ptr<reconstruction_quantity::metallicity>{
+      new reconstruction_quantity::metallicity{
+        &(app.get_data_loader()),
+        app.get_unit_converter()
       }
     };
   }
