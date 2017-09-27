@@ -623,7 +623,7 @@ public:
       : illustris_quantity{
           data,
           std::vector<std::string>{
-            "GFM_Metallicity "
+            "GFM_Metallicity"
           },
           converter
         }
