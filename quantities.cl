@@ -762,4 +762,57 @@ __kernel void density_weighted_metallicity(__global scalar* out,
   }
 }
 
+/// Calculates M_Z/M_tot*L with the X-ray flux L and metallicity
+/// M_Z/M_tot in units of solar metallicities/keV/s/m^2
+/// \param out Output array, must be at least of size \c num_elements
+/// \param num_elements number of data elements to process
+/// \param densities The densities in M_sun/kpc^3
+/// \param internal_energies The specific internal energies in (km/s)^2
+/// \param electron_abundances The electron abundances (dimensionless)
+/// \param metallicity The metallicity
+/// \param z The redshift of the observed object
+/// \param luminosity_distance The luminosity distance of the observed
+/// object in kpc
+/// \param gaunt_table The tabulated thermally averaged gaunt factors
+/// \param E_min minimum energy for the energy integration [keV]
+/// \param E_max maximum energy for the energy integration [keV]
+/// \param num_samples Number of integration steps
+__kernel void luminosity_weighted_metallicity(
+                                         __global scalar* out,
+                                         unsigned num_elements,
+                                         __global scalar* densities,
+                                         __global scalar* internal_energies,
+                                         __global scalar* electron_abundances,
+                                         __global scalar* metallicity,
+                                         scalar z,
+                                         scalar luminosity_distance,
+                                         __read_only image2d_t gaunt_table,
+                                         scalar E_min,
+                                         scalar E_max,
+                                         int num_samples)
+{
+  int tid = get_global_id(0);
+
+  if(tid < num_elements)
+  {
+    scalar density = densities[tid];
+    scalar internal_energy = internal_energies[tid];
+    scalar electron_abundance = electron_abundances[tid];
+    scalar T = get_temperature(internal_energy, electron_abundance);
+    scalar flux = integrate_spectral_flux((1.f + z) * E_min,
+                                          (1.f + z) * E_max,
+                                          1.f / (scalar)num_samples,
+                                          T,
+                                          electron_abundance,
+                                          density,
+                                          luminosity_distance,
+                                          gaunt_table,
+                                          XRAY_FLUX);
+
+    out[tid] = metallicity[tid] * flux;
+
+
+  }
+}
+
 #endif

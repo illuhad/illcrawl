@@ -84,7 +84,8 @@ environment::environment(int& argc, char**& argv)
                                              "unprocessed_quantity",
                                              "constant_quantity",
                                              "stellar_mass",
-                                             "density_weighted_metallicity"
+                                             "density_weighted_metallicity",
+                                             "luminosity_weighted_metallicity"
                                            });
   _global_ctx->global_register_source_file("integration.cl",
                                            {

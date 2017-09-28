@@ -531,6 +531,7 @@ quantity_command_line_parser::register_options(boost::program_options::options_d
        " * metallicity: M_Z/M_total, i.e. the metal mass divided by the total mass [solar metallicities]\n"
        " * density_weighted_metallicity: The metallicity weighted with the density\n"
        "   [solar metallicites * M_sun/kpc^2] for projections, [solar metallicities*M_sun/kpc^3] otherwise\n"
+       " * luminosity_weighted_metallicity: Calculate xray_flux*metallicity along the line of sight [keV/s/m^2*solar metallicities]\n"
        " * dm_mean_density: The dark matter mean density [M_sun/kpc^3]\n"
        " * dm_mass: The dark matter mass [M_sun]\n"
        " * stellar_mean_density: The stellar mean density [M_sun/kpc^3]\n"
@@ -583,6 +584,14 @@ quantity_command_line_parser::register_options(boost::program_options::options_d
        boost::program_options::value<math::scalar>(&_luminosity_weighted_temp_max_energy)->default_value(
          _luminosity_weighted_temp_max_energy),
        "End of energy integration range for the luminosity_weighted_temperature quantity [keV]")
+      ("quantity.luminosity_weighted_metallicity.min_energy",
+       boost::program_options::value<math::scalar>(&_luminosity_weighted_metallicity_min_energy)->default_value(
+         _luminosity_weighted_metallicity_min_energy),
+       "Start of energy integration range for the luminosity_weighted_metallicity quantity [keV]")
+      ("quantity.luminosity_weighted_metallicity.max_energy",
+       boost::program_options::value<math::scalar>(&_luminosity_weighted_metallicity_max_energy)->default_value(
+         _luminosity_weighted_metallicity_max_energy),
+       "End of energy integration range for the luminosity_weighted_metallicity quantity [keV]")
       ("quantity.dm.particle_mass",
        boost::program_options::value<math::scalar>(&_dm_particle_mass)->default_value(_dm_particle_mass),
        "The mass of a dark matter particle [10^10 M_sun/h]");
@@ -793,6 +802,23 @@ quantity_command_line_parser::create_quantity(const illcrawl_app& app) const
       new reconstruction_quantity::density_weighted_metallicity{
         &(app.get_data_loader()),
         app.get_unit_converter()
+      }
+    };
+  }
+  else if(_quantity_selection == "luminosity_weighted_metallicity")
+  {
+    assert_valid_integration_range(_luminosity_weighted_metallicity_min_energy,
+                                   _luminosity_weighted_metallicity_max_energy);
+
+    return std::unique_ptr<reconstruction_quantity::luminosity_weighted_metallicity>{
+      new reconstruction_quantity::luminosity_weighted_metallicity{
+        &(app.get_data_loader()),
+            app.get_unit_converter(),
+            app.get_environment().get_compute_device(),
+            app.get_redshift(),
+            app.get_luminosity_distance(),
+            _luminosity_weighted_metallicity_min_energy,
+            _luminosity_weighted_metallicity_max_energy
       }
     };
   }

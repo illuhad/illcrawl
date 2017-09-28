@@ -47,7 +47,11 @@ void nn8::init_backend(std::size_t blocksize)
 void nn8::setup_particles(const std::vector<particle>& particles,
                           const std::vector<cl::Buffer>& additional_dataset)
 {
-  _grid = std::make_shared<particle_grid>(_ctx, particles);
+  // First release memory before allocating new memory
+  _grid = nullptr;
+  _grid = std::unique_ptr<particle_grid>{
+      new particle_grid{_ctx, particles}
+  };
 }
 
 void nn8::setup_evaluation_points(const cl::Buffer& evaluation_points,

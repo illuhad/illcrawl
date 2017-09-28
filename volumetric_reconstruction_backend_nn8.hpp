@@ -66,7 +66,7 @@ private:
   qcl::device_context_ptr _ctx;
   std::size_t _blocksize;
 
-  std::shared_ptr<particle_grid> _grid;
+  std::unique_ptr<particle_grid> _grid;
 
   std::size_t _num_evaluation_points;
   cl::Buffer _result;

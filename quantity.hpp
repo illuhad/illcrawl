@@ -108,6 +108,11 @@ public:
   {
     return _particle_type_id;
   }
+
+  const io::illustris_data_loader* get_data_loader() const
+  {
+    return _data;
+  }
 private:
   io::illustris_data_loader* _data;
   std::vector<std::string> _dataset_identifiers;
@@ -732,6 +737,66 @@ public:
   }
 
   virtual ~density_weighted_metallicity(){}
+};
+
+
+class luminosity_weighted_metallicity : public xray_flux_based_quantity
+{
+public:
+  luminosity_weighted_metallicity(io::illustris_data_loader* data,
+                                  const unit_converter& converter,
+                                  const qcl::device_context_ptr& ctx,
+                                  math::scalar redshift,
+                                  math::scalar luminosity_distance,
+                                  math::scalar min_energy,
+                                  math::scalar max_energy)
+      : xray_flux_based_quantity{
+          data,
+          converter,
+          ctx,
+          redshift,
+          luminosity_distance
+        },
+        _min_energy{min_energy},
+        _max_energy{max_energy}
+  {}
+
+  virtual qcl::kernel_ptr get_kernel(const qcl::device_context_ptr& ctx) const override
+  {
+    return ctx->get_kernel("luminosity_weighted_metallicity");
+  }
+
+  virtual std::vector<H5::DataSet> get_required_datasets() const override
+  {
+    std::vector<H5::DataSet> parent_datasets = illustris_quantity::get_required_datasets();
+
+    parent_datasets.push_back(this->get_data_loader()->get_dataset("GFM_Metallicity"));
+    return parent_datasets;
+  }
+
+  virtual std::vector<math::scalar> get_quantitiy_scaling_factors() const override
+  {
+    std::vector<math::scalar> parent_scaling_factors =
+        density_temperature_electron_abundance_based_quantity::get_quantitiy_scaling_factors();
+    parent_scaling_factors.push_back(1.0 / 0.0127);
+
+    return parent_scaling_factors;
+  }
+
+  virtual void push_additional_kernel_args(qcl::kernel_argument_list& args) const override
+  {
+    this->push_xray_flux_kernel_args(args);
+
+    args.push(static_cast<device_scalar>(_min_energy));
+    args.push(static_cast<device_scalar>(_max_energy));
+    args.push(static_cast<cl_int>(100));
+  }
+
+  virtual ~luminosity_weighted_metallicity(){}
+
+private:
+  math::scalar _min_energy;
+  math::scalar _max_energy;
 };
 
 /// Represents a dark matter quantity that

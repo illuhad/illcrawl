@@ -211,6 +211,9 @@ private:
   math::scalar _luminosity_weighted_temp_min_energy = 0.1;
   math::scalar _luminosity_weighted_temp_max_energy = 10.0;
 
+  math::scalar _luminosity_weighted_metallicity_min_energy = 0.1;
+  math::scalar _luminosity_weighted_metallicity_max_energy = 10.0;
+
   math::scalar _dm_particle_mass = 0.000440896524361;
 };
 
