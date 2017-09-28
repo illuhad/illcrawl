@@ -749,4 +749,17 @@ __kernel void stellar_mass(__global scalar* out,
   }
 }
 
+__kernel void density_weighted_metallicity(__global scalar* out,
+                                            unsigned num_elements,
+                                            __global scalar* metallicities,
+                                            __global scalar* densities)
+{
+  int tid = get_global_id(0);
+
+  if(tid < num_elements)
+  {
+    out[tid] = densities[tid] * metallicities[tid];
+  }
+}
+
 #endif

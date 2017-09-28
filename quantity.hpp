@@ -538,6 +538,37 @@ public:
   virtual ~mean_density(){}
 };
 
+
+class projected_density : public density_based_quantity
+{
+public:
+  projected_density(io::illustris_data_loader* data,
+                    const unit_converter& converter)
+    : density_based_quantity{data, converter}
+  {}
+
+  virtual qcl::kernel_ptr get_kernel(const qcl::device_context_ptr &ctx) const override
+  {
+    return ctx->get_kernel("unprocessed_quantity");
+  }
+
+  virtual math::scalar effective_volume_integration_dV(math::scalar dV,
+                                                       math::scalar integration_volume) const override
+  {
+    // mean density for volume integration
+    return dV / integration_volume;
+  }
+
+  virtual math::scalar effective_line_of_sight_integration_dA(math::scalar dA,
+                                                              math::scalar integration_range) const override
+  {
+    // projected density along line of sight
+    return 1.0;
+  }
+
+  virtual ~projected_density(){}
+};
+
 class mass : public density_based_quantity
 {
 public:
@@ -656,6 +687,51 @@ public:
   }
 
   virtual ~metallicity(){}
+};
+
+/// The gas metallicity weighted with the gas density
+class density_weighted_metallicity : public illustris_quantity
+{
+public:
+  density_weighted_metallicity(io::illustris_data_loader* data,
+                               const unit_converter& converter)
+      : illustris_quantity{
+          data,
+          std::vector<std::string>{
+            "GFM_Metallicity",
+            io::illustris_data_loader::get_density_identifier()
+          },
+          converter
+        }
+  {}
+
+  virtual qcl::kernel_ptr get_kernel(const qcl::device_context_ptr &ctx) const override
+  {
+    return ctx->get_kernel("density_weighted_metallicity");
+  }
+
+  virtual std::vector<math::scalar> get_quantitiy_scaling_factors() const override
+  {
+    return std::vector<math::scalar>{{
+        1.0 / 0.0127, // divide by the solar metallicity to obtain the result in units of solar metallicities
+        this->get_unit_converter().density_conversion_factor()
+    }};
+  }
+
+  virtual math::scalar effective_volume_integration_dV(math::scalar dV,
+                                                       math::scalar integration_volume) const override
+  {
+    return dV / integration_volume;
+  }
+
+  virtual math::scalar effective_line_of_sight_integration_dA(math::scalar dA,
+                                                              math::scalar integration_range) const override
+  {
+    // projected weighted metallicity along line of sight
+    return 1.0;
+  }
+
+  virtual ~density_weighted_metallicity(){}
 };
 
 /// Represents a dark matter quantity that

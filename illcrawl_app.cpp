@@ -523,10 +523,14 @@ quantity_command_line_parser::register_options(boost::program_options::options_d
        " * xray_spectral_flux: The emitted xray flux within an energy channel [keV/s/m^2]\n"
        " * mean_temperature: The mean temperature along the line of sight [K]\n"
        " * luminosity_weighted_temperature: Calculates xray_flux*temperature along the line of sight. [keV/s/m^2*K]\n"
-       " * mean_density: The mean baryon density along the line of sight [M_sun/kpc^3]\n"
+       " * mean_density: The mean gas density along the line of sight [M_sun/kpc^3]\n"
+       " * projected_density: The projected gas density along the line of sight\n"
+       "   [M_sun/kpc^2] for projections, [M_sun/kpc^3] for volume integrations.\n"
        " * mass: The total baryonic mass along the line of sight [M_sun]\n"
        " * potential: The gravitational potential [(km/s)^2]\n"
        " * metallicity: M_Z/M_total, i.e. the metal mass divided by the total mass [solar metallicities]\n"
+       " * density_weighted_metallicity: The metallicity weighted with the density\n"
+       "   [solar metallicites * M_sun/kpc^2] for projections, [solar metallicities*M_sun/kpc^3] otherwise\n"
        " * dm_mean_density: The dark matter mean density [M_sun/kpc^3]\n"
        " * dm_mass: The dark matter mass [M_sun]\n"
        " * stellar_mean_density: The stellar mean density [M_sun/kpc^3]\n"
@@ -769,6 +773,24 @@ quantity_command_line_parser::create_quantity(const illcrawl_app& app) const
   {
     return std::unique_ptr<reconstruction_quantity::stellar_mass>{
       new reconstruction_quantity::stellar_mass{
+        &(app.get_data_loader()),
+        app.get_unit_converter()
+      }
+    };
+  }
+  else if(_quantity_selection == "projected_density")
+  {
+    return std::unique_ptr<reconstruction_quantity::projected_density>{
+      new reconstruction_quantity::projected_density{
+        &(app.get_data_loader()),
+        app.get_unit_converter()
+      }
+    };
+  }
+  else if(_quantity_selection == "density_weighted_metallicity")
+  {
+    return std::unique_ptr<reconstruction_quantity::density_weighted_metallicity>{
+      new reconstruction_quantity::density_weighted_metallicity{
         &(app.get_data_loader()),
         app.get_unit_converter()
       }
