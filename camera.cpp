@@ -182,6 +182,7 @@ void camera::generate_pixel_coordinates(const qcl::device_context_ptr &ctx,
                            "camera_generate_pixel_coordinates "
                            "kernel");
   err = generation_finished.wait();
+
   qcl::check_cl_error(err, "Error while waiting for the "
                            "camera_generate_pixel_coordinates "
                            "kernel to finish.");
