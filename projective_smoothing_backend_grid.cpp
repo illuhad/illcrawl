@@ -26,7 +26,7 @@ namespace dm {
 
 projective_smoothing_grid::projective_smoothing_grid(const qcl::device_context_ptr& ctx,
                                                      const H5::DataSet& smoothing_lengths)
-  : grid{ctx, smoothing_lengths, "projective_smoothing_grid", 1000},
+  : grid(ctx, smoothing_lengths, "projective_smoothing_grid", 1000),
     _ctx{ctx}
 {}
 

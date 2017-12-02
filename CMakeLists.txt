@@ -78,6 +78,10 @@ add_executable(illcrawl_filter_snapshot illcrawl_filter_snapshot.cpp)
 add_executable(illcrawl_cluster_analysis illcrawl_cluster_analysis.cpp)
 add_executable(illcrawl_sum_pixels illcrawl_sum_pixels.cpp)
 
+# This fixes configurations where MPI_CXX_LINK_FLAGS
+# has leading whitespaces, preventing the correct
+# recognition by cmake as linker flags.
+string(STRIP ${MPI_CXX_LINK_FLAGS} MPI_CXX_LINK_FLAGS)
 set(LIBS illcrawl_core ${MPI_CXX_LINK_FLAGS}
   ${MPI_CXX_LIBRARIES} ${OpenCL_LIBRARIES} ${HDF5_CXX_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT} ${Boost_MPI_LIBRARY} ${Boost_PROGRAM_OPTIONS_LIBRARY} ${Boost_SERIALIZATION_LIBRARY} cfitsio)
 
