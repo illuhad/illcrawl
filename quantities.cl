@@ -22,7 +22,7 @@
 #ifndef QUANTITIES_CL
 #define QUANTITIES_CL
 
-#include "interpolation.cl"
+
 #include "tabulated_function.cl"
 #include "integration.cl"
 
