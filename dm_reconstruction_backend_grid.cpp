@@ -120,7 +120,7 @@ grid::run()
   args.push(_grid->get_particle_buffer());
 
   args.push(_grid->get_sorted_smoothing_lengths());
-  args.push(_grid->get_overall_max_smoothing_length());
+  args.push(static_cast<device_scalar>(_grid->get_overall_max_smoothing_length()));
   args.push(_grid->get_max_smoothing_length_per_cell());
 
   args.push(static_cast<cl_int>(this->_num_evaluation_points));

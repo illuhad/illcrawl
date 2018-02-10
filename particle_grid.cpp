@@ -254,7 +254,7 @@ void
 particle_grid::sort_scalars_into_cells(cl::Buffer& values) const
 {
   cl::Buffer sorted_values;
-  _ctx->create_buffer<particle>(sorted_values, _num_particles);
+  _ctx->create_buffer<device_scalar>(sorted_values, _num_particles);
 
   qcl::kernel_ptr sort_scalars_kernel = _ctx->get_kernel("grid3d_sort_scalars_into_cells");
   qcl::kernel_argument_list sort_scalars_args{sort_scalars_kernel};

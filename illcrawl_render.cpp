@@ -306,10 +306,10 @@ int main(int argc, char** argv)
        "Number of slices for tomographies")
       ("integration.absolute_tolerance",
        boost::program_options::value<scalar>(&cmd_options.absolute_tolerance)->default_value(0.0),
-       "Absolute tolerance for line-of-sight integration (mutually exclusive with integration.relative_tolerance)")
+       "Absolute tolerance for the line-of-sight integration for voronoi (gas) quantities")
       ("integration.relative_tolerance",
        boost::program_options::value<scalar>(&cmd_options.relative_tolerance)->default_value(1.e-2),
-       "Relative tolerance for line-of-sight integration (mutually exclusive with integration.absolute_tolerance)")
+       "Relative tolerance for line-of-sight integration for voronoi (gas) quantities")
       ("output.resolution.x",
        boost::program_options::value<std::size_t>(&cmd_options.resolution_x)->default_value(1024),
        "Number of pixels in x direction")

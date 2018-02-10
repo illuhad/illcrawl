@@ -18,6 +18,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <cassert>
+
 #include "smoothing_particle_grid.hpp"
 
 #include <boost/compute/algorithm/max_element.hpp>
@@ -41,6 +43,8 @@ smoothing_particle_grid::smoothing_particle_grid(
         qcl::create_buffer_iterator<device_scalar>(_sorted_smoothing_lengths,
                                                    this->get_num_particles()),
         this->get_boost_queue());
+
+  assert(max_element_iterator.get_index() < this->get_num_particles());
 
   _maximum_smoothing_length = max_element_iterator.read(this->get_boost_queue());
 

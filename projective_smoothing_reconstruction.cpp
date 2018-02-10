@@ -71,18 +71,16 @@ projective_smoothing::retrieve_results()
   args.push(effective_dA);
   args.push(static_cast<cl_ulong>(this->_num_evaluation_points));
 
-  cl::Event scaling_finished;
   cl_int err = _ctx->enqueue_ndrange_kernel(scaling_kernel,
                                             cl::NDRange{_num_evaluation_points},
-                                            cl::NDRange{local_size},
-                                            &scaling_finished);
+                                            cl::NDRange{local_size});
   qcl::check_cl_error(err, "Could not enqueue vector_scale kernel");
-  err = scaling_finished.wait();
+  err = _ctx->get_command_queue().finish();
   qcl::check_cl_error(err, "Error while waiting for the vector_scale kernel"
                            " to complete.");
 
 
-  return _backend->retrieve_results();
+  return result;
 }
 
 std::string

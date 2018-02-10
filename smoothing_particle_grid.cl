@@ -57,18 +57,22 @@ void spg_run_reconstruction(
     grid3d_init(&grid, grid_min_corner, grid_cell_sizes, num_grid_cells);
 
     ulong evaluation_cell_key = grid3d_get_cell_key(&grid, evaluation_point.xyz);
-    scalar cutoff_radius = CUTOFF_RADIUS(
-           fmin(max_smoothing_lengths[evaluation_cell_key] + cell_radius,
-                overall_max_smoothing_length));
+
+    // Make sure we only access memory if we are within the grid, otherwise
+    // we would access invalid memory
+    scalar cutoff_radius = overall_max_smoothing_length;
+    if(evaluation_cell_key < num_grid_cells.x*num_grid_cells.y*num_grid_cells.z)
+    {
+      cutoff_radius = CUTOFF_RADIUS(
+                 fmin(max_smoothing_lengths[evaluation_cell_key] + cell_radius,
+                      overall_max_smoothing_length));
+    }
 
     int3 min_grid_cell = grid3d_get_cell_indices(&grid,
                                                  evaluation_point.xyz - (vector3)cutoff_radius);
 
     int3 max_grid_cell = grid3d_get_cell_indices(&grid,
                                                  evaluation_point.xyz + (vector3)cutoff_radius);
-
-
-
 
     int3 current_cell;
     for(current_cell.z =  min_grid_cell.z;
@@ -86,6 +90,7 @@ void spg_run_reconstruction(
           if(grid3d_is_cell_in_grid(&grid, current_cell))
           {
             ulong cell_key = grid3d_get_cell_key_from_indices(&grid, current_cell);
+
             int2 cell_entry = grid_cells[cell_key];
             scalar cell_cutoff =
                  CUTOFF_RADIUS(max_smoothing_lengths[cell_key]);
